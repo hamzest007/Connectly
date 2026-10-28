@@ -1,10 +1,16 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Connectly
+
+Connectly is a React Native CLI social app with a modular TypeScript/Express backend. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the folder structure and implementation boundaries.
+
+The complete product scope and delivery status are tracked in [FEATURES.md](./FEATURES.md).
+
+## Run the mobile app
 
 # Getting Started
 
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
-## Step 1: Start Metro
+### Start Metro
 
 First, you will need to run **Metro**, the JavaScript build tool for React Native.
 
@@ -18,7 +24,7 @@ npm start
 yarn start
 ```
 
-## Step 2: Build and run your app
+### Build and run
 
 With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
 
@@ -62,7 +68,51 @@ If everything is set up correctly, you should see your new app running in the An
 
 This is one way to run your app — you can also build it directly from Android Studio or Xcode.
 
-## Step 3: Modify your app
+## Run the API
+
+```sh
+cd backend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+The API endpoint is `GET http://localhost:4000/health`. Auth, posts, comments, reactions, saved posts, users, friends, and notifications are persisted through MongoDB.
+
+### Local MongoDB
+
+With Docker installed, run MongoDB from `backend/`:
+
+```sh
+docker compose up -d mongodb
+npm run seed
+```
+
+Demo accounts use the password `Connectly123!`. Change it immediately outside local development.
+
+For MongoDB Atlas, replace `MONGODB_URI` in `backend/.env` with your Atlas connection string and run `npm run seed` after the database is reachable.
+
+## Test and lint mobile
+
+```sh
+npm test
+npm run lint
+```
+
+## Reactotron
+
+Install and open the Reactotron desktop app, then run Metro with cache reset:
+
+```sh
+open -a Reactotron
+npm start -- --reset-cache
+```
+
+Launch the iOS or Android app afterward. The app connects to Reactotron only in development builds. Use the React Native debugger/network/log panels to inspect app activity.
+
+## Native setup
+
+Use the standard [React Native environment setup](https://reactnative.dev/docs/environment-setup). After native dependencies are added, run `bundle exec pod install` from the project root for iOS.
 
 Now that you have successfully run the app, let's make changes!
 

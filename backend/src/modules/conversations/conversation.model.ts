@@ -1,0 +1,9 @@
+import {Schema, model} from 'mongoose';
+
+const memberSchema=new Schema({userId:{type:Schema.Types.ObjectId,ref:'User',required:true},status:{type:String,enum:['accepted','requested'],default:'accepted'},joinedAt:{type:Date,default:Date.now}},{_id:false});
+const conversationSchema=new Schema({type:{type:String,enum:['direct','group'],default:'direct'},title:{type:String,trim:true,maxlength:80,default:''},participants:[memberSchema],lastMessageAt:{type:Date,default:null},pinnedBy:[{type:Schema.Types.ObjectId,ref:'User'}],mutedUntil:Map,archivedBy:[{type:Schema.Types.ObjectId,ref:'User'}]},{timestamps:true});
+conversationSchema.index({'participants.userId':1,lastMessageAt:-1});
+const messageSchema=new Schema({conversationId:{type:Schema.Types.ObjectId,ref:'Conversation',required:true,index:true},senderId:{type:Schema.Types.ObjectId,ref:'User',required:true},body:{type:String,trim:true,maxlength:10000,default:''},kind:{type:String,enum:['text','image','video','file','voice'],default:'text'},mediaUrl:{type:String,default:''},replyTo:{type:Schema.Types.ObjectId,ref:'Message',default:null},forwardedFrom:{type:Schema.Types.ObjectId,ref:'Message',default:null},editedAt:{type:Date,default:null},deletedAt:{type:Date,default:null},deliveredAt:{type:Date,default:Date.now},readBy:[{userId:{type:Schema.Types.ObjectId,ref:'User'},readAt:{type:Date}}]},{timestamps:true});
+messageSchema.index({conversationId:1,createdAt:-1});
+const reactionSchema=new Schema({messageId:{type:Schema.Types.ObjectId,ref:'Message',required:true},userId:{type:Schema.Types.ObjectId,ref:'User',required:true},type:{type:String,required:true}},{timestamps:true}); reactionSchema.index({messageId:1,userId:1},{unique:true});
+export const Conversation=model('Conversation',conversationSchema); export const Message=model('Message',messageSchema); export const MessageReaction=model('MessageReaction',reactionSchema);

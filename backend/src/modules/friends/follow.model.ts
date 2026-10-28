@@ -1,0 +1,1 @@
+import {Schema,model} from 'mongoose'; const schema=new Schema({followerId:{type:Schema.Types.ObjectId,ref:'User',required:true},followingId:{type:Schema.Types.ObjectId,ref:'User',required:true}},{timestamps:true}); schema.index({followerId:1,followingId:1},{unique:true}); schema.index({followingId:1}); export const Follow=model('Follow',schema);

@@ -1,0 +1,7 @@
+export type AdminUser={_id:string;name:string;username:string;email:string;role:string;status:string;isVerified:boolean;createdAt:string;suspensionReason?:string};
+export type Report={_id:string;targetType:string;targetId:string;reason:string;status:string;priority:string;createdAt:string;assignedTo?:{_id:string;name:string;username:string};reporterId?:{name:string;username:string;email:string}};
+const tokenKey='connectly-admin-access-token';
+export const getToken=()=>sessionStorage.getItem(tokenKey);
+export const clearToken=()=>sessionStorage.removeItem(tokenKey);
+export async function request<T>(path:string,options:RequestInit={}){const response=await fetch(`/api/v1${path}`,{...options,headers:{'Content-Type':'application/json',...(getToken()?{Authorization:`Bearer ${getToken()}`}:{})}});const payload=await response.json() as {success:boolean;data:T;error?:{message:string}};if(!response.ok||!payload.success)throw new Error(payload.error?.message??'Request failed.');return payload.data;}
+export async function login(email:string,password:string){const data=await request<{accessToken:string;user:AdminUser;refreshToken:string}>('/auth/login',{method:'POST',body:JSON.stringify({identifier:email,password})});if(!['admin','moderator'].includes(data.user.role))throw new Error('This account does not have admin access.');sessionStorage.setItem(tokenKey,data.accessToken);return data.user;}

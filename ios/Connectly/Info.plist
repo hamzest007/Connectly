@@ -28,14 +28,19 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Connectly needs camera access so you can capture media for posts.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Connectly uses your location only when you add a location to a post.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Connectly needs microphone access when recording video posts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Connectly needs photo library access so you can attach photos and videos to posts.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
