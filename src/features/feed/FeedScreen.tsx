@@ -1,44 +1,915 @@
 // @ts-nocheck
 import React from 'react';
-import {ActivityIndicator, FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, View} from 'react-native';
-import {Avatar} from '../../components/common/Avatar';
-import {PostCard} from '../../components/posts/PostCard';
-import {apiRequest} from '../../services/api/client';
-import {colors, radius, shadow, spacing} from '../../theme/tokens';
-import {Post} from '../../types/social';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Video from 'react-native-video';
+import { Avatar } from '../../components/common/Avatar';
+import { PostCard } from '../../components/posts/PostCard';
+import { apiRequest } from '../../services/api/client';
+import {
+  colors,
+  radius,
+  shadow,
+  shadowLarge,
+  spacing,
+} from '../../theme/tokens';
+import { Post } from '../../types/social';
 
-type FeedMode = 'for-you'|'following'|'friends'|'latest'|'trending'|'saved';
-type ApiPost = {_id:string; body:string; createdAt:string; reactionCount:number; commentCount:number; shareCount:number; pinned?:boolean; viewerReaction?:Post['viewerReaction']|null; viewerSaved?:boolean; media?:Post['media']; authorId:{_id:string;name:string;username:string;avatarUrl?:string}|null};
-type SavedPost = {postId: ApiPost|null};
-type Story = {_id:string; authorId:{name:string;username:string;avatarUrl?:string}|null; media:{url:string;type:'image'|'video'}[]};
-const modes:{key:FeedMode; label:string}[] = [{key:'for-you',label:'For you'},{key:'following',label:'Following'},{key:'friends',label:'Friends'},{key:'latest',label:'Latest'},{key:'trending',label:'Trending'},{key:'saved',label:'Saved'}];
+type FeedMode =
+  | 'for-you'
+  | 'following'
+  | 'friends'
+  | 'latest'
+  | 'trending'
+  | 'saved';
+type ApiPost = {
+  _id: string;
+  body: string;
+  createdAt: string;
+  reactionCount: number;
+  commentCount: number;
+  shareCount: number;
+  pinned?: boolean;
+  viewerReaction?: Post['viewerReaction'] | null;
+  viewerSaved?: boolean;
+  media?: Post['media'];
+  authorId: {
+    _id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  } | null;
+};
+type SavedPost = { postId: ApiPost | null };
+type Story = {
+  _id: string;
+  authorId: { name: string; username: string; avatarUrl?: string } | null;
+  body?: string;
+  media: { url: string; type: 'image' | 'video' }[];
+};
+const modes: { key: FeedMode; label: string }[] = [
+  { key: 'for-you', label: 'For you' },
+  { key: 'following', label: 'Following' },
+  { key: 'friends', label: 'Friends' },
+  { key: 'latest', label: 'Latest' },
+  { key: 'trending', label: 'Trending' },
+  { key: 'saved', label: 'Saved' },
+];
 
-export function FeedScreen({onCreatePost, accessToken, refreshKey, user, onOpenProfile, initialMode='for-you'}:{onCreatePost:()=>void;accessToken:string;refreshKey:number;user:{id:string;name:string;avatarUrl?:string};onOpenProfile?:(target:{id?:string;name:string;username:string})=>void;initialMode?:FeedMode}) {
-  const [posts,setPosts] = React.useState<Post[]>([]);
-  const [stories,setStories] = React.useState<Story[]>([]);
-  const [mode,setMode] = React.useState<FeedMode>(initialMode);
-  const [cursor,setCursor] = React.useState<string|null>(null);
-  const [loading,setLoading] = React.useState(true);
-  const [loadingMore,setLoadingMore] = React.useState(false);
-  const [error,setError] = React.useState('');
-  const [selectedStory,setSelectedStory] = React.useState<Story|null>(null);
-  const initials = user.name.split(' ').map(part=>part[0]).join('').slice(0,2);
-  const mapPost = (item:ApiPost):Post => {const author=item.authorId??{_id:'unknown',name:'Connectly member',username:'member',avatarUrl:undefined}; return {id:item._id,body:item.body,createdAt:new Date(item.createdAt).toLocaleDateString(),reactions:item.reactionCount,comments:item.commentCount,shares:item.shareCount,pinned:item.pinned,viewerReaction:item.viewerReaction??undefined,viewerSaved:item.viewerSaved,media:item.media,author:{id:author._id,name:author.name,username:author.username,avatarUrl:author.avatarUrl,initials:author.name.split(' ').map(part=>part[0]).join('').slice(0,2),accent:colors.blue}};};
-  const load = React.useCallback(async(reset=true)=>{if(reset)setLoading(true);else setLoadingMore(true);setError('');try{if(reset)setStories(await apiRequest<Story[]>('/stories',{},accessToken));if(mode==='saved'){const result=await apiRequest<SavedPost[]>('/posts/saved',{},accessToken);setPosts(result.map(item=>item.postId).filter((item):item is ApiPost=>Boolean(item)).map(mapPost));setCursor(null);return;}const query=`/posts?feed=${mode}&limit=12${!reset&&cursor?`&before=${encodeURIComponent(cursor)}`:''}`;const result=await apiRequest<{items:ApiPost[];nextCursor:string|null}>(query,{},accessToken);setPosts(current=>reset?result.items.map(mapPost):[...current,...result.items.map(mapPost)]);setCursor(result.nextCursor);}catch(e){setError(e instanceof Error?e.message:'Unable to load your feed.');}finally{setLoading(false);setLoadingMore(false);}},[accessToken,mode,cursor]);
-  React.useEffect(()=>{setCursor(null);void load(true);},[mode,refreshKey]);
-  const selectMode=(next:FeedMode)=>{if(next!==mode){setPosts([]);setMode(next);}};
-  const header = <View>
-    <View style={styles.topBar}><View><Text style={styles.kicker}>CONNECTLY</Text><Text style={styles.greeting}>Good morning, {user.name.split(' ')[0]}</Text></View><Pressable onPress={()=>onOpenProfile?.({id:user.id,name:user.name,username:''})} style={styles.profileButton}><Avatar initials={initials} avatarUrl={user.avatarUrl} size={42}/><View style={styles.onlineDot}/></Pressable></View>
-    <View style={styles.hero}><View><Text style={styles.heroTitle}>{mode==='saved'?'Saved moments':'Your daily feed'}</Text><Text style={styles.heroSubtitle}>{mode==='saved'?'Everything you bookmarked in one place':'Ideas, people and updates worth your time'}</Text></View><View style={styles.heroMark}><Text style={styles.heroMarkText}>✦</Text></View></View>
-    <View style={styles.storyCard}><View style={styles.storyHeader}><Text style={styles.sectionTitle}>Stories</Text><Text style={styles.storyHint}>{stories.length?`${stories.length} active`:'Start sharing'}</Text></View>{stories.length?<FlatList horizontal showsHorizontalScrollIndicator={false} data={stories} keyExtractor={item=>item._id} renderItem={({item})=>{const author=item.authorId??{name:'Member',username:'member',avatarUrl:undefined}; return <Pressable style={styles.storyItem} onPress={()=>{setSelectedStory(item);void apiRequest(`/stories/${item._id}/view`,{method:'POST'},accessToken).catch(()=>undefined);}}><View style={styles.storyRing}><Avatar initials={author.name.split(' ').map(part=>part[0]).join('').slice(0,2)} avatarUrl={author.avatarUrl} size={54}/></View><Text numberOfLines={1} style={styles.storyName}>{author.name}</Text></Pressable>}}/>:<Pressable onPress={onCreatePost} style={styles.emptyStory}><View style={styles.addStory}><Text style={styles.addStoryText}>＋</Text></View><View><Text style={styles.emptyStoryTitle}>Share your first story</Text><Text style={styles.emptyStoryText}>Photos and videos disappear after 24 hours</Text></View></Pressable>}</View>
-    <Pressable style={styles.composer} onPress={onCreatePost}><Avatar initials={initials} avatarUrl={user.avatarUrl} size={40}/><View style={styles.composerCopy}><Text style={styles.composerTitle}>What are you thinking?</Text><Text style={styles.composerHint}>Share a post, photo, video or reel</Text></View><View style={styles.composerAdd}><Text style={styles.composerAddText}>＋</Text></View></Pressable>
-    <View style={styles.quickActions}>{[['▣','Photo'],['▶','Video'],['✦','Feeling'],['⌖','Check in']].map(([icon,label])=><Pressable key={label} onPress={onCreatePost} style={styles.quickAction}><Text style={styles.quickIcon}>{icon}</Text><Text style={styles.quickLabel}>{label}</Text></Pressable>)}</View>
-    <View style={styles.feedHeading}><View><Text style={styles.sectionTitle}>{mode==='saved'?'Your bookmarks':'Discover updates'}</Text><Text style={styles.feedSubtitle}>{mode==='saved'?'Private collection':'Fresh from your community'}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot}/><Text style={styles.liveText}>LIVE</Text></View></View>
-    <FlatList horizontal showsHorizontalScrollIndicator={false} data={modes} keyExtractor={item=>item.key} contentContainerStyle={styles.modeRow} renderItem={({item})=><Pressable onPress={()=>selectMode(item.key)} style={[styles.modeChip,mode===item.key&&styles.modeChipActive]}><Text style={[styles.modeText,mode===item.key&&styles.modeTextActive]}>{item.label}</Text></Pressable>}/>
-  </View>;
-  return <><FlatList style={styles.list} contentContainerStyle={styles.content} data={posts} keyExtractor={item=>item.id} ListHeaderComponent={header} onEndReached={()=>{if(cursor&&!loading&&!loadingMore)void load(false)}} onEndReachedThreshold={0.45} refreshControl={<RefreshControl refreshing={loading&&posts.length>0} onRefresh={()=>{setCursor(null);void load(true)}} tintColor={colors.blue}/>} renderItem={({item})=><PostCard post={item} accessToken={accessToken} canDelete={item.author.id===user.id} initialSaved={mode==='saved'||item.viewerSaved} onOpenProfile={onOpenProfile} onHidden={id=>setPosts(current=>current.filter(post=>post.id!==id))} onSaved={(id,isSaved)=>{if(mode==='saved'&&!isSaved)setPosts(current=>current.filter(post=>post.id!==id));else setPosts(current=>current.map(post=>post.id===id?{...post,viewerSaved:isSaved}:post));}}/>} ListFooterComponent={loadingMore?<ActivityIndicator color={colors.blue} style={styles.footer}/>:<View/>} ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>{error?'!':mode==='saved'?'▱':'✦'}</Text><Text style={styles.emptyTitle}>{error?'Could not load your feed':mode==='saved'?'No bookmarks yet':'Nothing here yet'}</Text><Text style={styles.emptyText}>{error|| (loading?'Loading your feed…':mode==='following'?'Follow people to see updates here.':mode==='friends'?'Your friends have not posted yet.':mode==='saved'?'Save posts to find them here.':'Create the first update for your community.')}</Text>{error?<Pressable onPress={()=>void load(true)}><Text style={styles.retry}>Try again</Text></Pressable>:null}</View>}/><Modal visible={Boolean(selectedStory)} transparent animationType="fade" onRequestClose={()=>setSelectedStory(null)}><View style={styles.storyViewer}><Pressable style={styles.storyClose} onPress={()=>setSelectedStory(null)}><Text style={styles.storyCloseText}>×</Text></Pressable>{selectedStory?.media?.[0]?.type==='image'?<Image source={{uri:selectedStory.media[0].url}} style={styles.storyImage} resizeMode="contain"/>:<View style={styles.storyVideoPlaceholder}><Text style={styles.storyVideoIcon}>▶</Text><Text style={styles.storyVideoText}>Video story</Text></View>}</View></Modal></>;
+export function FeedScreen({
+  onCreatePost,
+  accessToken,
+  refreshKey,
+  user,
+  onOpenProfile,
+  initialMode = 'for-you',
+}: {
+  onCreatePost: () => void;
+  accessToken: string;
+  refreshKey: number;
+  user: { id: string; name: string; avatarUrl?: string };
+  onOpenProfile?: (target: {
+    id?: string;
+    name: string;
+    username: string;
+  }) => void;
+  initialMode?: FeedMode;
+}) {
+  const [posts, setPosts] = React.useState<Post[]>([]);
+  const [stories, setStories] = React.useState<Story[]>([]);
+  const [mode, setMode] = React.useState<FeedMode>(initialMode);
+  const [cursor, setCursor] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [selectedStory, setSelectedStory] = React.useState<Story | null>(null);
+  const [videoPaused, setVideoPaused] = React.useState(false);
+  const initials = user.name
+    .split(' ')
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2);
+  const mapPost = (item: ApiPost): Post => {
+    const author = item.authorId ?? {
+      _id: 'unknown',
+      name: 'Connectly member',
+      username: 'member',
+      avatarUrl: undefined,
+    };
+    return {
+      id: item._id,
+      body: item.body,
+      createdAt: new Date(item.createdAt).toLocaleDateString(),
+      reactions: item.reactionCount,
+      comments: item.commentCount,
+      shares: item.shareCount,
+      pinned: item.pinned,
+      viewerReaction: item.viewerReaction ?? undefined,
+      viewerSaved: item.viewerSaved,
+      media: item.media,
+      author: {
+        id: author._id,
+        name: author.name,
+        username: author.username,
+        avatarUrl: author.avatarUrl,
+        initials: author.name
+          .split(' ')
+          .map(part => part[0])
+          .join('')
+          .slice(0, 2),
+        accent: colors.blue,
+      },
+    };
+  };
+  const load = React.useCallback(
+    async (reset = true) => {
+      if (reset) setLoading(true);
+      else setLoadingMore(true);
+      setError('');
+      try {
+        if (reset)
+          setStories(await apiRequest<Story[]>('/stories', {}, accessToken));
+        if (mode === 'saved') {
+          const result = await apiRequest<SavedPost[]>(
+            '/posts/saved',
+            {},
+            accessToken,
+          );
+          setPosts(
+            result
+              .map(item => item.postId)
+              .filter((item): item is ApiPost => Boolean(item))
+              .map(mapPost),
+          );
+          setCursor(null);
+          return;
+        }
+        const query = `/posts?feed=${mode}&limit=12${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''
+          }`;
+        const result = await apiRequest<{
+          items: ApiPost[];
+          nextCursor: string | null;
+        }>(query, {}, accessToken);
+        setPosts(current =>
+          reset
+            ? result.items.map(mapPost)
+            : [...current, ...result.items.map(mapPost)],
+        );
+        setCursor(result.nextCursor);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Unable to load your feed.');
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [accessToken, mode, cursor],
+  );
+  React.useEffect(() => {
+    setCursor(null);
+    void load(true);
+  }, [mode, refreshKey, load]);
+  React.useEffect(() => {
+    if (selectedStory) {
+      setVideoPaused(false);
+    }
+  }, [selectedStory]);
+  const selectMode = (next: FeedMode) => {
+    if (next !== mode) {
+      setPosts([]);
+      setMode(next);
+    }
+  };
+  const header = (
+    <View>
+      <View style={styles.topBar}>
+        <View>
+          <Text style={styles.kicker}>CONNECTLY</Text>
+          <Text style={styles.greeting}>
+            Good morning, {user.name.split(' ')[0]}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() =>
+            onOpenProfile?.({ id: user.id, name: user.name, username: '' })
+          }
+          style={styles.profileButton}
+        >
+          <Avatar initials={initials} avatarUrl={user.avatarUrl} size={42} />
+          <View style={styles.onlineDot} />
+        </Pressable>
+      </View>
+      <View style={styles.hero}>
+        <View>
+          <Text style={styles.heroTitle}>
+            {mode === 'saved' ? 'Saved moments' : 'Your daily feed'}
+          </Text>
+          <Text style={styles.heroSubtitle}>
+            {mode === 'saved'
+              ? 'Everything you bookmarked in one place'
+              : 'Ideas, people and updates worth your time'}
+          </Text>
+        </View>
+        <View style={styles.heroMark}>
+          <Text style={styles.heroMarkText}>✦</Text>
+        </View>
+      </View>
+      <View style={styles.storyCard}>
+        <View style={styles.storyCardHeader}>
+          <Text style={[styles.sectionTitle, styles.storyCardTitle]}>Stories</Text>
+          <Text style={styles.storyHint}>
+            {stories.length ? `${stories.length} active` : 'Start sharing'}
+          </Text>
+        </View>
+        {stories.length ? (
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={stories}
+            keyExtractor={item => item._id}
+            contentContainerStyle={styles.storyList}
+            renderItem={({ item }) => {
+              const author = item.authorId ?? {
+                name: 'Member',
+                username: 'member',
+                avatarUrl: undefined,
+              };
+              return (
+                <Pressable
+                  style={styles.storyItem}
+                  onPress={() => {
+                    setVideoPaused(false);
+                    setSelectedStory(item);
+                    void apiRequest(
+                      `/stories/${item._id}/view`,
+                      { method: 'POST' },
+                      accessToken,
+                    ).catch(() => undefined);
+                  }}
+                >
+                  <View style={styles.storyRing}>
+                    <Avatar
+                      initials={author.name
+                        .split(' ')
+                        .map(part => part[0])
+                        .join('')
+                        .slice(0, 2)}
+                      avatarUrl={author.avatarUrl}
+                      size={44}
+                    />
+                  </View>
+                  <Text numberOfLines={1} style={styles.storyName}>
+                    {author.name}
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
+        ) : (
+          <Pressable onPress={onCreatePost} style={styles.emptyStory}>
+            <View style={styles.addStory}>
+              <Text style={styles.addStoryText}>＋</Text>
+            </View>
+            <View>
+              <Text style={styles.emptyStoryTitle}>Share your first story</Text>
+              <Text style={styles.emptyStoryText}>
+                Photos and videos disappear after 24 hours
+              </Text>
+            </View>
+          </Pressable>
+        )}
+      </View>
+      <Pressable style={styles.composer} onPress={onCreatePost}>
+        <Avatar initials={initials} avatarUrl={user.avatarUrl} size={40} />
+        <View style={styles.composerCopy}>
+          <Text style={styles.composerTitle}>What are you thinking?</Text>
+          <Text style={styles.composerHint}>
+            Share a post, photo, video or reel
+          </Text>
+        </View>
+        <View style={styles.composerAdd}>
+          <Text style={styles.composerAddText}>＋</Text>
+        </View>
+      </Pressable>
+      <View style={styles.quickActions}>
+        {[
+          ['▣', 'Photo'],
+          ['▶', 'Video'],
+          ['✦', 'Feeling'],
+          ['⌖', 'Check in'],
+        ].map(([icon, label]) => (
+          <Pressable
+            key={label}
+            onPress={onCreatePost}
+            style={styles.quickAction}
+          >
+            <Text style={styles.quickIcon}>{icon}</Text>
+            <Text style={styles.quickLabel}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.feedHeading}>
+        <View>
+          <Text style={styles.sectionTitle}>
+            {mode === 'saved' ? 'Your bookmarks' : 'Discover updates'}
+          </Text>
+          <Text style={styles.feedSubtitle}>
+            {mode === 'saved'
+              ? 'Private collection'
+              : 'Fresh from your community'}
+          </Text>
+        </View>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>LIVE</Text>
+        </View>
+      </View>
+      <FlatList
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        data={modes}
+        keyExtractor={item => item.key}
+        contentContainerStyle={styles.modeRow}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => selectMode(item.key)}
+            style={[
+              styles.modeChip,
+              mode === item.key && styles.modeChipActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.modeText,
+                mode === item.key && styles.modeTextActive,
+              ]}
+            >
+              {item.label}
+            </Text>
+          </Pressable>
+        )}
+      />
+    </View>
+  );
+  return (
+    <>
+      <FlatList
+        style={styles.list}
+        contentContainerStyle={styles.content}
+        data={posts}
+        keyExtractor={item => item.id}
+        ListHeaderComponent={header}
+        onEndReached={() => {
+          if (cursor && !loading && !loadingMore) void load(false);
+        }}
+        onEndReachedThreshold={0.45}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading && posts.length > 0}
+            onRefresh={() => {
+              setCursor(null);
+              void load(true);
+            }}
+            tintColor={colors.blue}
+          />
+        }
+        renderItem={({ item }) => (
+          <PostCard
+            post={item}
+            accessToken={accessToken}
+            canDelete={item.author.id === user.id}
+            initialSaved={mode === 'saved' || item.viewerSaved}
+            onOpenProfile={onOpenProfile}
+            onHidden={id =>
+              setPosts(current => current.filter(post => post.id !== id))
+            }
+            onSaved={(id, isSaved) => {
+              if (mode === 'saved' && !isSaved)
+                setPosts(current => current.filter(post => post.id !== id));
+              else
+                setPosts(current =>
+                  current.map(post =>
+                    post.id === id ? { ...post, viewerSaved: isSaved } : post,
+                  ),
+                );
+            }}
+            onEdited={() => void load(true)}
+          />
+        )}
+        ListFooterComponent={
+          loadingMore ? (
+            <ActivityIndicator color={colors.blue} style={styles.footer} />
+          ) : (
+            <View />
+          )
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>
+              {error ? '!' : mode === 'saved' ? '▱' : '✦'}
+            </Text>
+            <Text style={styles.emptyTitle}>
+              {error
+                ? 'Could not load your feed'
+                : mode === 'saved'
+                  ? 'No bookmarks yet'
+                  : 'Nothing here yet'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {error ||
+                (loading
+                  ? 'Loading your feed…'
+                  : mode === 'following'
+                    ? 'Follow people to see updates here.'
+                    : mode === 'friends'
+                      ? 'Your friends have not posted yet.'
+                      : mode === 'saved'
+                        ? 'Save posts to find them here.'
+                        : 'Create the first update for your community.')}
+            </Text>
+            {error ? (
+              <Pressable onPress={() => void load(true)}>
+                <Text style={styles.retry}>Try again</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        }
+      />
+      <Modal
+        visible={Boolean(selectedStory)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setSelectedStory(null);
+          setVideoPaused(true);
+        }}
+      >
+        <View style={styles.storyViewer}>
+          {/* Progress Bar */}
+          <View style={styles.storyProgress}>
+            <View style={styles.storyProgressFill} />
+          </View>
+
+          {/* Header */}
+          <View style={styles.storyHeader}>
+            <View style={styles.storyAuthor}>
+              <Avatar
+                initials={
+                  selectedStory?.authorId?.name
+                    .split(' ')
+                    .map(part => part[0])
+                    .join('')
+                    .slice(0, 2) || 'U'
+                }
+                avatarUrl={selectedStory?.authorId?.avatarUrl}
+                size={40}
+              />
+              <View style={styles.storyAuthorInfo}>
+                <Text style={styles.storyAuthorName}>
+                  {selectedStory?.authorId?.name}
+                </Text>
+                <Text style={styles.storyAuthorTime}>2h ago</Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={() => {
+                setSelectedStory(null);
+                setVideoPaused(true);
+              }}
+              style={styles.storyClose}
+            >
+              <Text style={styles.storyCloseText}>✕</Text>
+            </Pressable>
+          </View>
+
+          {/* Content */}
+          <View style={styles.storyContent}>
+            {selectedStory?.media?.[0]?.type === 'image' ? (
+              <Image
+                source={{ uri: selectedStory.media[0].url }}
+                style={styles.storyImage}
+                resizeMode="cover"
+              />
+            ) : selectedStory?.media?.[0]?.type === 'video' ? (
+              <Video
+                source={{ uri: selectedStory?.media?.[0]?.url }}
+                style={styles.storyVideo}
+                resizeMode="cover"
+                paused={videoPaused}
+                repeat
+                muted={false}
+                controls={false}
+                onPlaybackStatusUpdate={status => {
+                  if (status.isLoaded) {
+                    setVideoPaused(false);
+                  }
+                }}
+              />
+            ) : (
+              <View style={styles.storyTextContainer}>
+                <Text style={styles.storyText}>{selectedStory?.body}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Swipe Indicators */}
+          <View style={styles.storyIndicators}>
+            <View style={styles.storyIndicator} />
+            <View
+              style={[styles.storyIndicator, styles.storyIndicatorActive]}
+            />
+            <View style={styles.storyIndicator} />
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
 }
 
-const styles=StyleSheet.create({list:{flex:1,backgroundColor:colors.canvas},content:{padding:spacing.md,paddingBottom:120},topBar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginTop:spacing.xs,marginBottom:spacing.lg},kicker:{fontSize:10,letterSpacing:2,color:colors.blue,fontWeight:'900'},greeting:{fontSize:14,color:colors.muted,fontWeight:'700',marginTop:4},profileButton:{position:'relative'},onlineDot:{position:'absolute',right:-1,bottom:0,width:12,height:12,borderRadius:6,backgroundColor:colors.success,borderWidth:2,borderColor:colors.canvas},hero:{backgroundColor:colors.blue,borderRadius:radius.lg,padding:spacing.lg,flexDirection:'row',alignItems:'center',justifyContent:'space-between',...shadow},heroTitle:{fontSize:28,fontWeight:'900',color:'#fff',letterSpacing:-.7},heroSubtitle:{fontSize:12,color:'#E8E8FF',marginTop:5},heroMark:{width:52,height:52,borderRadius:18,backgroundColor:'rgba(255,255,255,.18)',alignItems:'center',justifyContent:'center'},heroMarkText:{fontSize:28,color:'#fff'},storyCard:{backgroundColor:colors.surface,borderRadius:radius.lg,padding:spacing.md,marginTop:spacing.md,borderWidth:1,borderColor:colors.border,...shadow},storyHeader:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:spacing.sm},sectionTitle:{fontSize:18,fontWeight:'900',color:colors.ink},storyHint:{fontSize:11,color:colors.blue,fontWeight:'800'},storyItem:{width:72,alignItems:'center',marginRight:spacing.sm},storyRing:{borderWidth:2,borderColor:colors.blue,borderRadius:34,padding:3},storyName:{fontSize:10,color:colors.muted,fontWeight:'800',marginTop:4},emptyStory:{flexDirection:'row',alignItems:'center',paddingVertical:spacing.xs},addStory:{width:54,height:54,borderRadius:27,backgroundColor:colors.blueSoft,alignItems:'center',justifyContent:'center'},addStoryText:{fontSize:28,color:colors.blue},emptyStoryTitle:{fontSize:13,fontWeight:'900',color:colors.ink,marginLeft:spacing.sm},emptyStoryText:{fontSize:10,color:colors.muted,marginLeft:spacing.sm,marginTop:3},composer:{backgroundColor:colors.surface,borderRadius:radius.lg,padding:spacing.md,flexDirection:'row',alignItems:'center',marginTop:spacing.md,borderWidth:1,borderColor:colors.border,...shadow},composerCopy:{flex:1,marginLeft:spacing.sm},composerTitle:{fontSize:14,fontWeight:'900',color:colors.ink},composerHint:{fontSize:11,color:colors.muted,marginTop:3},composerAdd:{width:40,height:40,borderRadius:20,backgroundColor:colors.blueSoft,alignItems:'center',justifyContent:'center'},composerAddText:{fontSize:26,color:colors.blue},quickActions:{flexDirection:'row',justifyContent:'space-between',paddingHorizontal:spacing.sm,marginTop:spacing.sm},quickAction:{alignItems:'center',padding:spacing.xs},quickIcon:{fontSize:17,color:colors.blue},quickLabel:{fontSize:10,color:colors.muted,fontWeight:'800',marginTop:3},feedHeading:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:spacing.xl,marginBottom:spacing.sm},feedSubtitle:{fontSize:11,color:colors.muted,marginTop:3},liveBadge:{flexDirection:'row',alignItems:'center',backgroundColor:colors.mint,borderRadius:radius.pill,paddingHorizontal:spacing.sm,paddingVertical:6},liveDot:{width:7,height:7,borderRadius:4,backgroundColor:colors.success,marginRight:4},liveText:{fontSize:9,color:colors.success,fontWeight:'900',letterSpacing:1},modeRow:{paddingBottom:spacing.md},modeChip:{backgroundColor:colors.surface,borderRadius:radius.pill,paddingHorizontal:spacing.md,paddingVertical:spacing.sm,marginRight:spacing.sm,borderWidth:1,borderColor:colors.border},modeChipActive:{backgroundColor:colors.ink,borderColor:colors.ink},modeText:{fontSize:12,fontWeight:'800',color:colors.muted},modeTextActive:{color:'#fff'},footer:{paddingVertical:spacing.md},empty:{paddingVertical:spacing.xl,alignItems:'center',paddingHorizontal:spacing.lg},emptyIcon:{fontSize:30,color:colors.blue},emptyTitle:{fontSize:17,fontWeight:'900',color:colors.ink,marginTop:spacing.sm},emptyText:{textAlign:'center',color:colors.muted,lineHeight:21,fontSize:13,marginTop:spacing.xs},retry:{color:colors.blue,fontWeight:'900',marginTop:spacing.md}});
-Object.assign(styles,{storyViewer:{flex:1,backgroundColor:'rgba(0,0,0,.92)',justifyContent:'center',alignItems:'center'},storyClose:{position:'absolute',top:55,right:20,zIndex:2},storyCloseText:{fontSize:36,color:'#fff'},storyImage:{width:'100%',height:'80%'},storyVideoPlaceholder:{alignItems:'center'},storyVideoIcon:{fontSize:48,color:'#fff'},storyVideoText:{fontSize:16,color:'#fff',fontWeight:'800'}});
+const styles = StyleSheet.create({
+  list: { flex: 1, backgroundColor: colors.canvas },
+  content: { padding: spacing.lg, paddingBottom: 120 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xl,
+  },
+  kicker: {
+    fontSize: 11,
+    letterSpacing: 2.5,
+    color: colors.primary,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  greeting: {
+    fontSize: 15,
+    color: colors.muted,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  profileButton: { position: 'relative' },
+  onlineDot: {
+    position: 'absolute',
+    right: -1,
+    bottom: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.success,
+    borderWidth: 2,
+    borderColor: colors.canvas,
+  },
+  hero: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    ...shadowLarge,
+  },
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -1,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  heroMark: {
+    width: 56,
+    height: 56,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroMarkText: { fontSize: 28, color: '#fff' },
+  storyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    marginTop: spacing.lg,
+    borderWidth: 0,
+    ...shadowLarge,
+    zIndex: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  storyCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  storyCardTitle: {
+    marginVertical: 0,
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.ink,
+    letterSpacing: -0.5,
+    marginVertical: spacing.lg,
+  },
+  storyHint: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  storyItem: {
+    width: 64,
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  storyRing: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: 30,
+    padding: 2,
+  },
+  storyName: {
+    fontSize: 10,
+    color: colors.muted,
+    fontWeight: '600',
+    marginTop: 6,
+    maxWidth: 64,
+    textAlign: 'center',
+  },
+  storyList: {
+    paddingHorizontal: spacing.xs,
+  },
+  emptyStory: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  addStory: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.lavender,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addStoryText: { fontSize: 28, color: colors.primary },
+  emptyStoryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.ink,
+    marginLeft: spacing.md,
+  },
+  emptyStoryText: {
+    fontSize: 11,
+    color: colors.muted,
+    marginLeft: spacing.md,
+    marginTop: 2,
+  },
+  composer: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    borderWidth: 0,
+    ...shadowLarge,
+  },
+  composerCopy: { flex: 1, marginLeft: spacing.md },
+  composerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  composerHint: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  composerAdd: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.lavender,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composerAddText: { fontSize: 26, color: colors.primary },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xs,
+    marginTop: spacing.md,
+  },
+  quickAction: { alignItems: 'center', padding: spacing.sm },
+  quickIcon: { fontSize: 18, color: colors.primary },
+  quickLabel: {
+    fontSize: 11,
+    color: colors.muted,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  feedHeading: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xxl,
+    marginBottom: spacing.md,
+  },
+  feedSubtitle: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.mint,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+    marginRight: 4,
+  },
+  liveText: {
+    fontSize: 10,
+    color: colors.success,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  modeRow: { paddingBottom: spacing.md },
+  modeChip: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    borderWidth: 0,
+  },
+  modeChipActive: {
+    backgroundColor: colors.primary,
+  },
+  modeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+  },
+  modeTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  footer: { paddingVertical: spacing.lg },
+  empty: {
+    paddingVertical: spacing.xxl,
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  emptyIcon: { fontSize: 36, color: colors.primary },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.ink,
+    marginTop: spacing.md,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: colors.muted,
+    lineHeight: 22,
+    fontSize: 14,
+    marginTop: spacing.sm,
+  },
+  retry: {
+    color: colors.primary,
+    fontWeight: '700',
+    marginTop: spacing.lg,
+  },
+});
+Object.assign(styles, {
+  storyViewer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  storyProgress: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    zIndex: 10,
+  },
+  storyProgressFill: {
+    width: '70%',
+    height: '100%',
+    backgroundColor: '#fff',
+  },
+  storyHeader: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  storyAuthor: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  storyAuthorInfo: {
+    marginLeft: spacing.md,
+  },
+  storyAuthorName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  storyAuthorTime: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 2,
+  },
+  storyClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyCloseText: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  storyContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  storyImage: {
+    width: '100%',
+    height: '100%',
+  },
+  storyVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  storyTextContainer: {
+    width: '90%',
+    padding: spacing.xxl,
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    borderRadius: radius.xl,
+    borderWidth: 2,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+  },
+  storyText: {
+    fontSize: 32,
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 44,
+  },
+  storyIndicators: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    zIndex: 10,
+  },
+  storyIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  storyIndicatorActive: {
+    backgroundColor: '#fff',
+    width: 24,
+  },
+});
 // @ts-nocheck
