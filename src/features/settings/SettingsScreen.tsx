@@ -28,7 +28,10 @@ type Props = {
       | 'data'
       | 'support'
       | 'account'
-      | 'archive',
+      | 'archive'
+      | 'creator'
+      | 'close-friends'
+      | 'monetization',
   ) => void;
   onBack?: () => void;
   onLogout: () => void;
@@ -83,9 +86,9 @@ export function SettingsScreen({
     'Security and login': () => onDetail('security'),
     'Help and support': () => onDetail('support'),
     Archive: () => onDetail('archive'),
-    'Close friends': () => onDetail('privacy'),
-    'Creator dashboard': () => onDetail('activity'),
-    Monetization: () => onDetail('data'),
+    'Close friends': () => onDetail('close-friends'),
+    'Creator dashboard': () => onDetail('creator'),
+    Monetization: () => onDetail('monetization'),
   };
   const renderItem = ([title, meta, icon]: MenuItem) => (
     <Pressable

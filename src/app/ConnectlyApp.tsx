@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FeedScreen } from '../features/feed/FeedScreen';
 import { CreatePostScreen } from '../features/posts/CreatePostScreen';
 import { FriendsScreen } from '../features/friends/FriendsScreen';
+import { FriendRequestsScreen } from '../features/friends/FriendRequestsScreen';
 import { NotificationsScreen } from '../features/notifications/NotificationsScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { AuthScreen } from '../features/auth/AuthScreen';
@@ -51,7 +52,7 @@ export function ConnectlyApp() {
   const [focusPostId, setFocusPostId] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState('');
   const [screen, setScreen] = useState<
-    'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'settings' | 'search'
+    'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'settings' | 'search' | 'friend-requests'
   >('main');
   const [settingsKind, setSettingsKind] = useState<
     | 'activity'
@@ -64,6 +65,9 @@ export function ConnectlyApp() {
     | 'support'
     | 'account'
     | 'archive'
+    | 'creator'
+    | 'close-friends'
+    | 'monetization'
   >('activity');
   const [profileUser, setProfileUser] = useState<
     { name: string; username: string } | undefined
@@ -253,6 +257,8 @@ export function ConnectlyApp() {
         />
       </SafeAreaView>
     );
+  if (screen === 'friend-requests')
+    return <SafeAreaView style={styles.app} edges={['top', 'bottom']}><FriendRequestsScreen accessToken={session.accessToken} onBack={() => {setScreen('main');setTab('friends');}} onOpenProfile={target => openProfile(target, 'friends')} /></SafeAreaView>;
   const content =
     screen === 'messages' ? (
       <MessagesScreen accessToken={session.accessToken} />
@@ -283,6 +289,7 @@ export function ConnectlyApp() {
     ) : tab === 'friends' ? (
       <FriendsScreen
         accessToken={session.accessToken}
+        onOpenRequests={() => setScreen('friend-requests')}
         onOpenProfile={target => openProfile(target, 'friends')}
       />
     ) : tab === 'notifications' ? (

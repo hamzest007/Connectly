@@ -36,16 +36,16 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   if (feed === 'reels') {
     query.audience = 'public';
   } else if (feed === 'friends') {
-    query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId}];
+    query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId}];
   } else if (feed === 'following') {
-    query.$or = [{audience:'public',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {audience:'friends',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}];
+    query.$or = [{audience:'public',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {audience:'friends',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {groupId:{$in:groupIds},audience:'public'}];
   } else {
-    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId}];
+    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId}];
   }
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};
   const sort = feed === 'trending' ? {reactionCount:-1, commentCount:-1, shareCount:-1, createdAt:-1} : {createdAt:-1};
-  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
+  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate('groupId', 'name description memberCount visibility').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
   const reactions = await Reaction.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId type');
   const savedPosts = await SavedPost.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId');
   const reactionByPost = new Map(reactions.map(reaction=>[String(reaction.postId),reaction.type]));

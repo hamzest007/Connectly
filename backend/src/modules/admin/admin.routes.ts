@@ -11,11 +11,12 @@ import {VerificationRequest} from './verification.model';
 import {PlatformConfig} from './config.model';
 import {Story} from '../stories/story.model';
 import {Listing} from '../marketplace/marketplace.model';
+import {Group, GroupMember} from '../groups/group.model';
 
 const router=Router();
 router.use(requireAuth, requireAdmin);
 
-const audit = (req:AuthRequest, action:string, targetType:'user'|'post'|'comment'|'report'|'story'|'listing'|'config'|'verification', targetId:string, metadata:Record<string,unknown>={}) => AuditLog.create({actorId:req.userId,action,targetType,targetId,metadata});
+const audit = (req:AuthRequest, action:string, targetType:'user'|'post'|'comment'|'report'|'story'|'listing'|'config'|'verification'|'group', targetId:string, metadata:Record<string,unknown>={}) => AuditLog.create({actorId:req.userId,action,targetType,targetId,metadata});
 
 router.get('/overview', asyncHandler(async(_req,res)=>{
   const [users,publishedPosts,openReports,suspended,dailyActiveUsers,engagement] = await Promise.all([User.countDocuments(),Post.countDocuments({status:'published'}),Report.countDocuments({status:{$in:['open','reviewing']}}),User.countDocuments({status:'suspended'}),PostView.distinct('userId',{viewedAt:{$gte:new Date(Date.now()-86400000)}}).then(ids=>ids.length),Post.aggregate([{$match:{status:'published'}},{$group:{_id:null,likes:{$sum:'$reactionCount'},comments:{$sum:'$commentCount'},shares:{$sum:'$shareCount'},views:{$sum:'$viewCount'}}}]).then(rows=>rows[0]??{likes:0,comments:0,shares:0,views:0})]);
@@ -53,6 +54,19 @@ router.delete('/content/:type/:id', asyncHandler(async(req:AuthRequest,res)=>{co
   if(type==='story') deleted=(await Story.findByIdAndUpdate(id,{archived:true}))!==null;
   if(type==='listing') deleted=(await Listing.findByIdAndUpdate(id,{status:'archived'}))!==null;
   if(!deleted)throw new HttpError(404,'Content not found.'); await audit(req,'remove_content',type,id); return ok(res,{deleted:true});
+}));
+
+router.get('/groups', asyncHandler(async(req,res)=>{
+  const q=String(req.query.q??'').trim(); const limit=Math.min(Math.max(Number(req.query.limit??50),1),100);
+  const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{description:{$regex:q,$options:'i'}}]}:{};
+  const groups=await Group.find(filter).sort({createdAt:-1}).limit(limit).populate('createdBy','name username');
+  const items=await Promise.all(groups.map(async group=>({...(group.toObject()),posts:await Post.countDocuments({groupId:group._id,status:'published'}),activeMembers:await GroupMember.countDocuments({groupId:group._id,status:'active'})})));
+  return ok(res,items);
+}));
+router.patch('/groups/:id', asyncHandler(async(req:AuthRequest,res)=>{
+  const data=z.object({visibility:z.enum(['public','private','invite-only']).optional(),description:z.string().trim().max(1000).optional()}).parse(req.body);
+  const group=await Group.findByIdAndUpdate(req.params.id,data,{new:true,runValidators:true}).populate('createdBy','name username');
+  if(!group)throw new HttpError(404,'Group not found.'); await audit(req,'update_group','group',String(group._id),data); return ok(res,group);
 }));
 
 router.patch('/users/:id/status', asyncHandler(async(req:AuthRequest,res)=>{

@@ -40,6 +40,7 @@ type ApiPost = {
   reactionCount: number;
   commentCount: number;
   shareCount: number;
+  groupId?: { _id: string; name: string; memberCount: number } | string | null;
   pinned?: boolean;
   viewerReaction?: Post['viewerReaction'] | null;
   viewerSaved?: boolean;
@@ -129,6 +130,7 @@ export function FeedScreen({
       reactions: item.reactionCount,
       comments: item.commentCount,
       shares: item.shareCount,
+      group: item.groupId && typeof item.groupId !== 'string' ? {id: item.groupId._id, name: item.groupId.name, memberCount: item.groupId.memberCount} : undefined,
       pinned: item.pinned,
       viewerReaction: item.viewerReaction ?? undefined,
       viewerSaved: item.viewerSaved,

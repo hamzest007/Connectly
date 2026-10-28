@@ -10,7 +10,7 @@ const postSchema = new Schema({
   mentions: [{type: String, trim: true}],
   media: [{url: String, type: {type: String, enum: ['image', 'video']}, thumbnailUrl: String}],
   isReel: {type: Boolean, default: false, index: true},
-  status: {type: String, enum: ['draft', 'scheduled', 'published'], default: 'published', index: true},
+  status: {type: String, enum: ['draft', 'scheduled', 'pending', 'rejected', 'published'], default: 'published', index: true},
   scheduledFor: {type: Date, default: null, index: true},
   accessibilityText: {type: String, trim: true, maxlength: 500, default: ''},
   pinned: {type: Boolean, default: false, index: true},

@@ -18,9 +18,11 @@ type FriendRequest = { _id: string; requesterId: User };
 export function FriendsScreen({
   accessToken,
   onOpenProfile,
+  onOpenRequests,
 }: {
   accessToken: string;
   onOpenProfile?: (user: { name: string; username: string }) => void;
+  onOpenRequests?: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<User[]>([]);
@@ -110,9 +112,10 @@ export function FriendsScreen({
           <Text style={styles.eyebrow}>CONNECT WITH PEOPLE</Text>
           <Text style={styles.title}>Friends</Text>
         </View>
-        <View style={styles.headerBadge}>
+        <Pressable style={styles.headerBadge} onPress={onOpenRequests}>
           <Text style={styles.headerIcon}>♧</Text>
-        </View>
+          {requests.length ? <View style={styles.requestBadge}><Text style={styles.requestBadgeText}>{requests.length > 9 ? '9+' : requests.length}</Text></View> : null}
+        </Pressable>
       </View>
       <Text style={styles.subtitle}>
         Find your people and build your circle.
@@ -307,6 +310,8 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   headerIcon: { fontSize: 25, color: '#fff' },
+  requestBadge: { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.canvas },
+  requestBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900' },
   subtitle: {
     fontSize: 14,
     color: colors.muted,

@@ -70,6 +70,7 @@ export function PostCard({
   const [showEditModal, setShowEditModal] = useState(false);
   const [editBody, setEditBody] = useState(post.body);
   const [editing, setEditing] = useState(false);
+  const [joinedGroup, setJoinedGroup] = useState(false);
   React.useEffect(() => {
     setSaved(Boolean(initialSaved));
   }, [initialSaved, post.id]);
@@ -271,6 +272,16 @@ export function PostCard({
     }
   };
 
+  const joinGroup = async () => {
+    if (!post.group || joinedGroup) return;
+    try {
+      await apiRequest(`/groups/${post.group.id}/join`, {method: 'POST'}, accessToken);
+      setJoinedGroup(true);
+    } catch {
+      Alert.alert('Unable to join group', 'Please try again later.');
+    }
+  };
+
   return (
     <>
       <View style={styles.card}>
@@ -365,6 +376,18 @@ export function PostCard({
         {pinned ? (
           <View style={styles.pinned}>
             <Text style={styles.pinnedText}>✦ Pinned post</Text>
+          </View>
+        ) : null}
+        {post.group ? (
+          <View style={styles.groupBanner}>
+            <View style={styles.groupBadge}><Text style={styles.groupBadgeText}>✦</Text></View>
+            <View style={styles.groupCopy}>
+              <Text style={styles.groupLabel}>Posted in {post.group.name}</Text>
+              <Text style={styles.groupMeta}>{post.group.memberCount} members · public community</Text>
+            </View>
+            <Pressable onPress={() => void joinGroup()} style={[styles.groupJoin, joinedGroup && styles.groupJoined]}>
+              <Text style={[styles.groupJoinText, joinedGroup && styles.groupJoinedText]}>{joinedGroup ? 'Joined' : 'Join'}</Text>
+            </Pressable>
           </View>
         ) : null}
         {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
@@ -680,6 +703,16 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     ...shadowLarge,
   },
+  groupBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.blueSoft, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.sm },
+  groupBadge: { width: 32, height: 32, borderRadius: 12, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  groupBadgeText: { color: '#fff', fontSize: 17, fontWeight: '900' },
+  groupCopy: { flex: 1, marginHorizontal: spacing.sm },
+  groupLabel: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  groupMeta: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  groupJoin: { backgroundColor: colors.blue, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 7 },
+  groupJoined: { backgroundColor: colors.surface },
+  groupJoinText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  groupJoinedText: { color: colors.blue },
   menu: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

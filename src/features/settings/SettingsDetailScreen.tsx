@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { apiRequest } from '../../services/api/client';
@@ -19,7 +20,10 @@ type Kind =
   | 'data'
   | 'support'
   | 'account'
-  | 'archive';
+  | 'archive'
+  | 'creator'
+  | 'close-friends'
+  | 'monetization';
 export function SettingsDetailScreen({
   kind,
   accessToken,
@@ -32,10 +36,13 @@ export function SettingsDetailScreen({
   onLogout: () => void;
 }) {
   const [loading, setLoading] = React.useState(
-    kind === 'activity' || kind === 'security' || kind === 'notifications',
+    kind === 'activity' || kind === 'security' || kind === 'notifications' || kind === 'creator' || kind === 'close-friends' || kind === 'monetization',
   );
   const [items, setItems] = React.useState<any[]>([]);
   const [prefs, setPrefs] = React.useState<any>(null);
+  const [following, setFollowing] = React.useState<any[]>([]);
+  const [closeFriends, setCloseFriends] = React.useState<Set<string>>(new Set());
+  const [monetization, setMonetization] = React.useState<any>(null);
   const labels: { [key in Kind]: [string, string] } = {
     activity: ['Your activity', 'Review your recent account activity.'],
     privacy: [
@@ -62,12 +69,27 @@ export function SettingsDetailScreen({
       'Deactivate or permanently delete your account.',
     ],
     archive: ['Archive', 'Manage content you have archived.'],
+    creator: ['Creator dashboard', 'See how your content is performing.'],
+    'close-friends': ['Close friends', 'Choose who sees your closer updates.'],
+    monetization: ['Monetization', 'Manage tips, subscriptions, and payouts.'],
   };
   React.useEffect(() => {
     void (async () => {
       try {
         if (kind === 'activity')
           setItems(await apiRequest<any[]>('/posts/activity', {}, accessToken));
+        if (kind === 'creator')
+          setItems([await apiRequest<any>('/users/me/creator-dashboard', {}, accessToken)]);
+        if (kind === 'close-friends') {
+          const [friends, selected] = await Promise.all([
+            apiRequest<any[]>('/follows', {}, accessToken),
+            apiRequest<any[]>('/users/me/close-friends', {}, accessToken),
+          ]);
+          setFollowing(friends);
+          setCloseFriends(new Set(selected.map(item => String(item.friendId?._id ?? item.friendId))));
+        }
+        if (kind === 'monetization')
+          setMonetization(await apiRequest<any>('/users/me/monetization', {}, accessToken));
         if (kind === 'security')
           setItems(await apiRequest<any[]>('/auth/sessions', {}, accessToken));
         if (kind === 'notifications')
@@ -238,6 +260,34 @@ export function SettingsDetailScreen({
             <Text style={styles.primaryText}>Log out all other sessions</Text>
           </Pressable>
         </View>
+      ) : kind === 'close-friends' ? (
+        <View>
+          {following.map(item => {
+            const person = item.followingId;
+            if (!person) return null;
+            const selected = closeFriends.has(String(person._id));
+            return <Pressable style={styles.row} key={person._id} onPress={() => { const next = new Set(closeFriends); if (selected) { next.delete(String(person._id)); void apiRequest(`/users/me/close-friends/${person._id}`, {method:'DELETE'}, accessToken); } else { next.add(String(person._id)); void apiRequest(`/users/me/close-friends/${person._id}`, {method:'PUT'}, accessToken); } setCloseFriends(next); }}><View style={styles.copy}><Text style={styles.rowTitle}>{person.name}</Text><Text style={styles.rowMeta}>@{person.username}</Text></View><Text style={styles.actionText}>{selected ? 'Added' : 'Add'}</Text></Pressable>;
+          })}
+          {!following.length ? <Text style={styles.empty}>Follow people first to add close friends.</Text> : null}
+        </View>
+      ) : kind === 'monetization' ? (
+        <View>
+          <Text style={styles.sectionHint}>Your settings are saved to your account and can be changed anytime.</Text>
+          {(['enabled','tipsEnabled','subscriptionsEnabled'] as const).map(key => <Pressable style={styles.row} key={key} onPress={() => { const next = {...monetization, [key]: !monetization?.[key]}; setMonetization(next); void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({[key]:next[key]})},accessToken); }}><View style={styles.copy}><Text style={styles.rowTitle}>{key === 'enabled' ? 'Enable monetization' : key === 'tipsEnabled' ? 'Accept tips' : 'Offer subscriptions'}</Text><Text style={styles.rowMeta}>{monetization?.[key] ? 'Enabled' : 'Disabled'}</Text></View><Text style={styles.actionText}>{monetization?.[key] ? 'On' : 'Off'}</Text></Pressable>)}
+          <TextInput value={monetization?.payoutEmail ?? ''} onChangeText={value => setMonetization({...monetization,payoutEmail:value})} onEndEditing={() => void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({payoutEmail:monetization?.payoutEmail ?? ''})},accessToken)} placeholder="Payout email" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" style={styles.input} />
+        </View>
+      ) : kind === 'creator' ? (
+        <View>
+          {Object.entries(items[0] ?? {}).filter(([key]) => key !== '_id').map(([key, value]) => (
+            <View style={styles.row} key={key}>
+              <View style={styles.copy}>
+                <Text style={styles.rowTitle}>{key[0].toUpperCase() + key.slice(1)}</Text>
+                <Text style={styles.rowMeta}>Lifetime creator metric</Text>
+              </View>
+              <Text style={styles.metricValue}>{String(value)}</Text>
+            </View>
+          ))}
+        </View>
       ) : kind === 'activity' ? (
         <View>
           {items.map(item => (
@@ -344,6 +394,10 @@ const styles = StyleSheet.create({
   copy: { flex: 1 },
   rowTitle: { fontSize: 14, fontWeight: '900', color: colors.ink },
   rowMeta: { fontSize: 11, color: colors.muted, marginTop: 4 },
+  sectionHint: { color: colors.muted, fontSize: 13, lineHeight: 20, marginBottom: spacing.sm },
+  empty: { color: colors.muted, fontSize: 13, paddingVertical: spacing.lg },
+  input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, color: colors.ink, marginTop: spacing.md },
+  metricValue: { fontSize: 20, fontWeight: '900', color: colors.blue },
   chevron: { fontSize: 28, color: colors.muted },
   actionText: { fontSize: 12, color: colors.blue, fontWeight: '900' },
   toggle: {
