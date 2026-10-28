@@ -1,20 +1,23 @@
 import {Router} from 'express';
+import {Types} from 'mongoose';
 import {z} from 'zod';
 import {asyncHandler} from '../../common/asyncHandler';
 import {ok, HttpError} from '../../common/http';
 import {requireAuth, AuthRequest} from '../../middleware/auth';
 import {Comment, CommentReaction, HiddenPost, Post, PostView, Reaction, RecommendationFeedback, SnoozedUser} from './post.model';
 import {SavedPost} from './saved-post.model';
+import {Collection} from './collection.model';
 import {Follow} from '../friends/follow.model';
 import {Friendship} from '../friends/friend.model';
 import {Block} from '../blocks/block.model';
 import {notify} from '../notifications/notification.service';
 import {GroupMember} from '../groups/group.model';
-import {User} from '../auth/auth.model';
+import {Group} from '../groups/group.model';
+import {User, RecommendationPreferences} from '../auth/auth.model';
 
 const router = Router();
 const mediaInput = z.object({url: z.string().url(), type: z.enum(['image', 'video']), thumbnailUrl: z.string().url().optional()});
-const postInput = z.object({publisherType:z.enum(['personal','page']).optional(),body: z.string().trim().max(5000).default(''), audience: z.enum(['public', 'friends', 'close-friends', 'private']).default('public'), location: z.string().trim().max(120).default(''), media: z.array(mediaInput).max(10).default([]), hashtags: z.array(z.string().regex(/^#[a-z0-9_]+$/i)).max(30).default([]), mentions: z.array(z.string()).max(50).default([]), isReel: z.boolean().default(false), status: z.enum(['draft', 'scheduled', 'published']).default('published'), scheduledFor: z.coerce.date().nullable().optional(), accessibilityText: z.string().trim().max(500).default(''), contentWarning: z.string().trim().max(160).default(''), commentsDisabled: z.boolean().default(false), repostOf: z.string().optional(), quoteBody: z.string().trim().max(5000).default(''), poll: z.object({question:z.string().trim().min(1).max(240),options:z.array(z.object({label:z.string().trim().min(1).max(80)})).min(2).max(6),endsAt:z.coerce.date().optional()}).optional()}).refine(value => value.status === 'draft' || value.body.length > 0 || value.media.length > 0 || Boolean(value.repostOf) || Boolean(value.poll), 'A post needs text, media, or a poll.').refine(value => !value.isReel || (value.audience === 'public' && value.media.length === 1 && value.media[0].type === 'video'), 'A reel must be one public video.');
+const postInput = z.object({publisherType:z.enum(['personal','page']).optional(),body: z.string().trim().max(5000).default(''), audience: z.enum(['public', 'friends', 'close-friends', 'private']).default('public'), location: z.string().trim().max(120).default(''), media: z.array(mediaInput).max(10).default([]), hashtags: z.array(z.string().regex(/^#[a-z0-9_]+$/i)).max(30).default([]), mentions: z.array(z.string()).max(50).default([]), isReel: z.boolean().default(false), status: z.enum(['draft', 'scheduled', 'published']).default('published'), scheduledFor: z.coerce.date().nullable().optional(), accessibilityText: z.string().trim().max(500).default(''), contentWarning: z.string().trim().max(160).default(''), commentsDisabled: z.boolean().default(false), repostOf: z.string().optional(), quoteBody: z.string().trim().max(5000).default(''), templateId: z.string().trim().max(80).default(''), brandedCoverUrl: z.string().url().or(z.literal('')).default(''), collaborators: z.array(z.string()).max(10).default([]), poll: z.object({question:z.string().trim().min(1).max(240),options:z.array(z.object({label:z.string().trim().min(1).max(80)})).min(2).max(6),endsAt:z.coerce.date().optional()}).optional(), interactive: z.object({type:z.enum(['quiz','question','countdown']),prompt:z.string().trim().min(1).max(240),options:z.array(z.string().trim().min(1).max(80)).max(6).default([]),answer:z.string().trim().max(80).optional(),endsAt:z.coerce.date().optional()}).optional()}).refine(value => value.status === 'draft' || value.body.length > 0 || value.media.length > 0 || Boolean(value.repostOf) || Boolean(value.poll) || Boolean(value.interactive), 'A post needs text, media, or an interaction.').refine(value => !value.isReel || (value.audience === 'public' && value.media.length === 1 && value.media[0].type === 'video'), 'A reel must be one public video.');
 const reactionInput = z.object({type: z.enum(['Like', 'Love', 'Haha', 'Wow', 'Sad', 'Angry'])});
 router.use(requireAuth);
 
@@ -27,6 +30,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const feedbackHidden = await RecommendationFeedback.find({userId:req.userId,type:'not-interested'}).distinct('postId');
   const blocked = await Block.find({blockerId:req.userId}).distinct('blockedId');
   const snoozed = await SnoozedUser.find({userId:req.userId,until:{$gt:new Date()}}).distinct('snoozedUserId');
+  const preferences = await RecommendationPreferences.findOne({userId:req.userId}).lean();
   const authorIds = [req.userId];
   if (feed === 'following' || feed === 'for-you') authorIds.push(...(await Follow.find({followerId:req.userId}).distinct('followingId')).map(String));
   if (feed === 'friends') {
@@ -34,6 +38,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
     friendships.forEach(item => authorIds.push(String(item.requesterId) === req.userId ? String(item.recipientId) : String(item.requesterId)));
   }
   const query: any = {_id: {$nin: [...hidden, ...feedbackHidden]}, archived: {$ne: true}, $and: [{$or: [{status: 'published'}, {status: {$exists: false}}, {status: 'scheduled', scheduledFor: {$lte: new Date()}}]}, {$or: [{scheduledFor: {$exists: false}}, {scheduledFor: null}, {scheduledFor: {$lte: new Date()}}]}]};
+  if (preferences?.mutedKeywords?.length) query.$and.push({$nor: preferences.mutedKeywords.map(keyword => ({$or:[{body:{$regex:keyword,$options:'i'}},{hashtags:{$regex:keyword,$options:'i'}}]}))});
   if (feed === 'reels') query.isReel = true;
   const visibleAuthors = authorIds.filter(id => String(id)!==req.userId && !snoozed.map(String).includes(String(id)) && !blocked.map(String).includes(String(id)));
   const groupIds = await GroupMember.find({userId:req.userId,status:'active'}).distinct('groupId');
@@ -49,21 +54,44 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   }
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};
-  const sort = feed === 'trending' ? {reactionCount:-1, commentCount:-1, shareCount:-1, createdAt:-1} : {createdAt:-1};
-  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
+  const sort = feed === 'trending' && !preferences?.chronological ? {reactionCount:-1, commentCount:-1, shareCount:-1, createdAt:-1} : {createdAt:-1};
+  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate('groupId', 'name visibility').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
   const reactions = await Reaction.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId type');
   const savedPosts = await SavedPost.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId');
+  const groupIdsForPosts = posts.map(post => String((post.groupId as any)?._id ?? post.groupId)).filter(id => id && id !== 'undefined' && Types.ObjectId.isValid(id));
+  const groups = await Group.find({_id:{$in:groupIdsForPosts}}).select('name visibility coverUrl memberCount');
+  const groupById = new Map(groups.map(group => [String(group._id), group]));
   const reactionByPost = new Map(reactions.map(reaction=>[String(reaction.postId),reaction.type]));
   const savedPostIds = new Set(savedPosts.map(post=>String(post.postId)));
-  const items = posts.map(post=>({...post.toObject(), viewerReaction:reactionByPost.get(String(post._id)) ?? null, viewerSaved:savedPostIds.has(String(post._id))}));
+  const followedOrOwn = new Set(authorIds.map(String));
+  const items = posts.map(post=>({...post.toObject(), group: groupById.has(String((post.groupId as any)?._id ?? post.groupId)) ? {id:String((post.groupId as any)?._id ?? post.groupId), name:groupById.get(String((post.groupId as any)?._id ?? post.groupId))?.name, visibility:groupById.get(String((post.groupId as any)?._id ?? post.groupId))?.visibility, coverUrl:groupById.get(String((post.groupId as any)?._id ?? post.groupId))?.coverUrl, memberCount:groupById.get(String((post.groupId as any)?._id ?? post.groupId))?.memberCount} : undefined, viewerReaction:reactionByPost.get(String(post._id)) ?? null, viewerSaved:savedPostIds.has(String(post._id)), recommendationReason: feed === 'for-you' && preferences?.showReasons !== false && !followedOrOwn.has(String((post.authorId as any)?._id ?? post.authorId)) ? 'Suggested because it is public and popular in your community.' : undefined}));
   return ok(res, {items, feed, nextCursor: posts.length === limit ? posts[posts.length - 1].createdAt : null});
 }));
 router.get('/saved', asyncHandler(async (req: AuthRequest, res) => {
   const saved = await SavedPost.find({userId:req.userId}).sort({createdAt:-1}).populate({path:'postId',populate:[{path:'authorId',select:'name username avatarUrl'},{path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}}]}).limit(50);
   return ok(res, saved);
 }));
+router.get('/memories', asyncHandler(async (req:AuthRequest,res) => {
+  const month=Math.min(Math.max(Number(req.query.month??new Date().getMonth()+1),1),12);
+  const day=Math.min(Math.max(Number(req.query.day??new Date().getDate()),1),31);
+  const posts=await Post.find({authorId:req.userId,archived:{$ne:true},status:'published',$expr:{$and:[{$eq:[{$month:'$createdAt'},month]},{$eq:[{$dayOfMonth:'$createdAt'},day]}]}}).sort({createdAt:-1}).limit(50).populate('authorId','name username avatarUrl');
+  return ok(res,posts);
+}));
+router.get('/collections', asyncHandler(async(req:AuthRequest,res)=>ok(res,await Collection.find({userId:req.userId}).sort({updatedAt:-1}).populate('postIds'))));
+router.post('/collections', asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({name:z.string().trim().min(1).max(80)}).parse(req.body);return ok(res,await Collection.create({userId:req.userId,name:data.name}),201);}));
+router.post('/collections/:collectionId/posts/:postId', asyncHandler(async(req:AuthRequest,res)=>{const collection=await Collection.findOneAndUpdate({_id:req.params.collectionId,userId:req.userId},{$addToSet:{postIds:req.params.postId}},{new:true});if(!collection)throw new HttpError(404,'Collection not found.');return ok(res,collection);}));
+router.delete('/collections/:collectionId/posts/:postId', asyncHandler(async(req:AuthRequest,res)=>{const collection=await Collection.findOneAndUpdate({_id:req.params.collectionId,userId:req.userId},{$pull:{postIds:req.params.postId}},{new:true});if(!collection)throw new HttpError(404,'Collection not found.');return ok(res,collection);}));
+router.delete('/collections/:collectionId', asyncHandler(async(req:AuthRequest,res)=>{const result=await Collection.deleteOne({_id:req.params.collectionId,userId:req.userId});if(!result.deletedCount)throw new HttpError(404,'Collection not found.');return ok(res,{deleted:true});}));
 router.get('/drafts', asyncHandler(async (req: AuthRequest, res) => {
   return ok(res, await Post.find({authorId: req.userId, status: 'draft'}).sort({updatedAt: -1}).limit(50));
+}));
+router.post('/drafts/autosave', asyncHandler(async (req: AuthRequest, res) => {
+  const data = postInput.parse({...req.body, status:'draft'});
+  const owner=await User.findById(req.userId).select('accountType');
+  const publisherType=data.publisherType??(owner?.accountType==='page'?'page':'personal');
+  const draftId=typeof req.body?.draftId==='string' && Types.ObjectId.isValid(req.body.draftId) ? req.body.draftId : undefined;
+  const post = draftId ? await Post.findOneAndUpdate({_id:draftId,authorId:req.userId,status:'draft'},{...data,publisherType,collaborators:data.collaborators.filter(value=>Types.ObjectId.isValid(value))},{new:true,runValidators:true}) : await Post.create({...data,publisherType,authorId:req.userId,collaborators:data.collaborators.filter(value=>Types.ObjectId.isValid(value))});
+  return ok(res, post, draftId ? 200 : 201);
 }));
 router.get('/suggestions', asyncHandler(async (req: AuthRequest, res) => {
   const following = await Follow.find({followerId: req.userId}).distinct('followingId');
@@ -89,13 +117,13 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
   if(publisherType==='page'&&owner?.accountType!=='page') throw new HttpError(403,'Switch to your Page before publishing Page content.');
   if (data.scheduledFor && data.scheduledFor <= new Date()) throw new HttpError(400, 'Scheduled time must be in the future.');
   const status = data.status === 'draft' ? 'draft' : data.scheduledFor ? 'scheduled' : 'published';
-  return ok(res, await Post.create({...data, publisherType, status, hashtags: data.hashtags.map(tag => tag.toLowerCase()), authorId: req.userId}), 201);
+  return ok(res, await Post.create({...data, publisherType, status, hashtags: data.hashtags.map(tag => tag.toLowerCase()), authorId: req.userId, collaborators:data.collaborators.filter(value=>Types.ObjectId.isValid(value))}), 201);
 }));
 router.patch('/:id', asyncHandler(async (req: AuthRequest, res) => {
   const data = postInput.parse(req.body);
   if (data.scheduledFor && data.scheduledFor <= new Date()) throw new HttpError(400, 'Scheduled time must be in the future.');
   const status = data.status === 'draft' ? 'draft' : data.scheduledFor ? 'scheduled' : 'published';
-  const post = await Post.findOneAndUpdate({_id: req.params.id, authorId: req.userId}, {...data, status, hashtags: data.hashtags.map(tag => tag.toLowerCase())}, {new: true, runValidators: true});
+  const post = await Post.findOneAndUpdate({_id: req.params.id, authorId: req.userId}, {...data, status, hashtags: data.hashtags.map(tag => tag.toLowerCase()), collaborators:data.collaborators.filter(value=>Types.ObjectId.isValid(value))}, {new: true, runValidators: true});
   if (!post) throw new HttpError(404, 'Post not found or not owned by you.');
   return ok(res, post);
 }));

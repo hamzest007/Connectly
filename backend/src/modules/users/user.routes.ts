@@ -3,24 +3,50 @@ import {z} from 'zod';
 import {asyncHandler} from '../../common/asyncHandler';
 import {ok, HttpError} from '../../common/http';
 import {AuthRequest, requireAuth} from '../../middleware/auth';
-import {User} from '../auth/auth.model';
+import {User, RecommendationPreferences} from '../auth/auth.model';
 import {Follow} from '../friends/follow.model';
-import {Post} from '../posts/post.model';
+import {Post, RecommendationFeedback} from '../posts/post.model';
 import {CloseFriend} from './close-friend.model';
 import {MonetizationProfile} from './monetization.model';
 import {Friendship} from '../friends/friend.model';
+import {CollaborationRequest} from './collaboration-request.model';
 
 const router = Router();
 router.use(requireAuth);
-const publicFields = 'name username email bio avatarUrl coverUrl website location country education maritalStatus privateAccount isVerified accountType pageEnabled pageName pageUsername pageCategory pageWebsite pageEmail pagePhone pageLocation pageCountry createdAt';
+const publicFields = 'name username email bio avatarUrl coverUrl website location country education maritalStatus privateAccount isVerified accountType pageEnabled pageName pageUsername pageCategory pageWebsite pageEmail pagePhone pageLocation pageCountry theme accentColor profileLayout featuredSections createdAt';
 
 router.get('/me', asyncHandler(async (req:AuthRequest, res) => ok(res, await User.findById(req.userId).select(publicFields))));
+router.get('/me/recommendation-preferences', asyncHandler(async (req:AuthRequest, res) => ok(res, await RecommendationPreferences.findOneAndUpdate({userId:req.userId},{},{upsert:true,new:true,setDefaultsOnInsert:true}).select('-userId'))));
+router.patch('/me/recommendation-preferences', asyncHandler(async (req:AuthRequest, res) => {
+  const data=z.object({chronological:z.boolean().optional(),showReasons:z.boolean().optional(),mutedKeywords:z.array(z.string().trim().min(1).max(40)).max(100).optional()}).parse(req.body);
+  if (data.mutedKeywords) data.mutedKeywords=[...new Set(data.mutedKeywords.map(value=>value.toLowerCase()).filter(Boolean))];
+  return ok(res, await RecommendationPreferences.findOneAndUpdate({userId:req.userId},data,{upsert:true,new:true,setDefaultsOnInsert:true}).select('-userId'));
+}));
+router.post('/me/recommendation-preferences/reset', asyncHandler(async (req:AuthRequest, res) => { await Promise.all([RecommendationPreferences.findOneAndUpdate({userId:req.userId},{chronological:false,showReasons:true,mutedKeywords:[]},{upsert:true}), RecommendationFeedback.deleteMany({userId:req.userId})]); return ok(res,{reset:true}); }));
 router.get('/me/creator-dashboard', asyncHandler(async (req:AuthRequest, res) => {
   const [summary] = await Post.aggregate([
     {$match: {authorId: req.userId, status: 'published', archived: {$ne: true}}},
     {$group: {_id: null, posts: {$sum: 1}, likes: {$sum: '$reactionCount'}, comments: {$sum: '$commentCount'}, shares: {$sum: '$shareCount'}, views: {$sum: '$viewCount'}, reach: {$sum: '$reachCount'}}},
   ]);
   return ok(res, summary ?? {posts: 0, likes: 0, comments: 0, shares: 0, views: 0, reach: 0});
+}));
+router.get('/me/creator-studio', asyncHandler(async (req:AuthRequest, res) => {
+  const [summary] = await Post.aggregate([{$match:{authorId:req.userId,archived:{$ne:true}}},{$group:{_id:null,posts:{$sum:1},views:{$sum:'$viewCount'},reach:{$sum:'$reachCount'},likes:{$sum:'$reactionCount'},comments:{$sum:'$commentCount'},shares:{$sum:'$shareCount'},watchTimeSeconds:{$sum:'$watchTimeSeconds'}}}]);
+  const [followers, topPosts, scheduled, drafts, collaborationRequests, monetization] = await Promise.all([
+    Follow.countDocuments({followingId:req.userId}),
+    Post.find({authorId:req.userId,status:'published',archived:{$ne:true}}).select('body reactionCount commentCount shareCount viewCount watchTimeSeconds createdAt media').sort({reactionCount:-1,commentCount:-1,shareCount:-1}).limit(5),
+    Post.find({authorId:req.userId,status:'scheduled'}).select('body scheduledFor media').sort({scheduledFor:1}).limit(50),
+    Post.find({authorId:req.userId,status:'draft'}).select('body updatedAt media').sort({updatedAt:-1}).limit(50),
+    CollaborationRequest.find({creatorId:req.userId}).sort({createdAt:-1}).limit(50),
+    MonetizationProfile.findOneAndUpdate({userId:req.userId},{},{upsert:true,new:true,setDefaultsOnInsert:true}),
+  ]);
+  return ok(res,{summary:summary??{posts:0,views:0,reach:0,likes:0,comments:0,shares:0,watchTimeSeconds:0},followers,topPosts,scheduled,drafts,mediaLibrary:topPosts.flatMap(post=>post.media??[]),collaborationRequests,monetization});
+}));
+router.patch('/me/collaboration-requests/:id', asyncHandler(async (req:AuthRequest,res) => {
+  const status=z.enum(['accepted','declined']).parse(req.body?.status);
+  const request=await CollaborationRequest.findOneAndUpdate({_id:req.params.id,creatorId:req.userId},{status},{new:true});
+  if(!request) throw new HttpError(404,'Collaboration request not found.');
+  return ok(res,request);
 }));
 router.get('/me/page-dashboard', asyncHandler(async (req:AuthRequest, res) => {
   const user=await User.findById(req.userId).select('pageEnabled accountType pageName pageUsername');
@@ -46,7 +72,7 @@ router.put('/me/close-friends/:friendId', asyncHandler(async (req:AuthRequest, r
 router.delete('/me/close-friends/:friendId', asyncHandler(async (req:AuthRequest, res) => ok(res, {removed:(await CloseFriend.deleteOne({userId:req.userId,friendId:req.params.friendId})).deletedCount>0})));
 router.get('/me/monetization', asyncHandler(async (req:AuthRequest, res) => ok(res, await MonetizationProfile.findOneAndUpdate({userId:req.userId},{},{upsert:true,new:true,setDefaultsOnInsert:true}))));
 router.patch('/me/monetization', asyncHandler(async (req:AuthRequest, res) => {
-  const data=z.object({enabled:z.boolean().optional(),tipsEnabled:z.boolean().optional(),subscriptionsEnabled:z.boolean().optional(),payoutEmail:z.string().email().or(z.literal('')).optional()}).parse(req.body);
+  const data=z.object({enabled:z.boolean().optional(),tipsEnabled:z.boolean().optional(),subscriptionsEnabled:z.boolean().optional(),virtualGiftsEnabled:z.boolean().optional(),payoutEmail:z.string().email().or(z.literal('')).optional()}).parse(req.body);
   return ok(res, await MonetizationProfile.findOneAndUpdate({userId:req.userId},data,{upsert:true,new:true,setDefaultsOnInsert:true}));
 }));
 router.post('/me/page', asyncHandler(async (req:AuthRequest, res) => {
@@ -68,7 +94,7 @@ router.patch('/me/page-mode', asyncHandler(async (req:AuthRequest, res) => {
   await user.save(); return ok(res, await User.findById(user._id).select(publicFields));
 }));
 router.patch('/me', asyncHandler(async (req:AuthRequest, res) => {
-  const data = z.object({name:z.string().trim().min(2).max(80).optional(),bio:z.string().trim().max(280).optional(),avatarUrl:z.string().url().optional(),coverUrl:z.string().url().optional(),website:z.string().trim().max(180).optional(),location:z.string().trim().max(120).optional(),country:z.string().trim().max(80).optional(),education:z.string().trim().max(160).optional(),maritalStatus:z.string().trim().max(40).optional(),privateAccount:z.boolean().optional()}).parse(req.body);
+  const data = z.object({name:z.string().trim().min(2).max(80).optional(),bio:z.string().trim().max(280).optional(),avatarUrl:z.string().url().optional(),coverUrl:z.string().url().optional(),website:z.string().trim().max(180).optional(),location:z.string().trim().max(120).optional(),country:z.string().trim().max(80).optional(),education:z.string().trim().max(160).optional(),maritalStatus:z.string().trim().max(40).optional(),privateAccount:z.boolean().optional(),theme:z.enum(['light','dark','system']).optional(),accentColor:z.string().regex(/^#[0-9a-f]{6}$/i).optional(),profileLayout:z.enum(['standard','compact','featured']).optional(),featuredSections:z.array(z.string().max(40)).max(12).optional()}).parse(req.body);
   const user=await User.findById(req.userId); if(!user) throw new HttpError(404,'User not found.'); Object.assign(user,data);
   if(user.accountType==='page'){if(data.name!==undefined)user.pageName=data.name;if(data.bio!==undefined)user.pageBio=data.bio;if(data.avatarUrl!==undefined)user.pageAvatarUrl=data.avatarUrl;if(data.coverUrl!==undefined)user.pageCoverUrl=data.coverUrl;} else {if(data.name!==undefined)user.personalName=data.name;if(data.bio!==undefined)user.personalBio=data.bio;if(data.avatarUrl!==undefined)user.personalAvatarUrl=data.avatarUrl;if(data.coverUrl!==undefined)user.personalCoverUrl=data.coverUrl;}
   await user.save(); return ok(res, await User.findById(user._id).select(publicFields));

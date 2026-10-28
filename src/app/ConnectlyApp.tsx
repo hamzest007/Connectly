@@ -50,6 +50,7 @@ export function ConnectlyApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [feedMode, setFeedMode] = useState<'for-you' | 'saved'>('for-you');
   const [focusPostId, setFocusPostId] = useState<string | undefined>();
+  const [pendingGroupId, setPendingGroupId] = useState<string | undefined>();
   const [focusConversationId, setFocusConversationId] = useState<string | undefined>();
   const [messageReturnTab, setMessageReturnTab] = useState<Tab>('menu');
   const [settingsReturnTab, setSettingsReturnTab] = useState<Tab>('menu');
@@ -66,6 +67,7 @@ export function ConnectlyApp() {
     | 'notifications'
     | 'security'
     | 'content'
+    | 'collections'
     | 'accessibility'
     | 'data'
     | 'support'
@@ -241,7 +243,8 @@ export function ConnectlyApp() {
       <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
         <GroupsScreen
           accessToken={session.accessToken}
-          onBack={() => { setScreen('main'); setTab('menu'); }}
+          initialGroupId={pendingGroupId}
+          onBack={() => { setPendingGroupId(undefined); setScreen('main'); setTab('menu'); }}
         />
       </SafeAreaView>
     );
@@ -376,6 +379,7 @@ export function ConnectlyApp() {
         announcement={platformConfig?.announcement}
         maintenanceMode={Boolean(platformConfig?.flags?.maintenanceMode)}
         onOpenProfile={target => openProfile(target, 'home')}
+        onOpenGroup={groupId => { setPendingGroupId(groupId); setScreen('groups'); }}
       />
     );
   return (

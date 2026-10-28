@@ -5,7 +5,11 @@ const auditSchema = new Schema({
   action:{type:String,required:true,index:true},
   targetType:{type:String,enum:['user','post','comment','report','story','listing','config','verification','group'],required:true},
   targetId:{type:Schema.Types.ObjectId,required:true},
-  metadata:{type:Schema.Types.Mixed,default:{}}
+  metadata:{type:Schema.Types.Mixed,default:{}},
+  integrityHash:{type:String,required:true,index:true},
+  previousHash:{type:String,default:''}
+  ,ip:{type:String,default:''}
+  ,userAgent:{type:String,default:''}
 },{timestamps:true});
 
 auditSchema.index({createdAt:-1});

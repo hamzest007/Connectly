@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
@@ -16,7 +16,8 @@ import { pickMedia, uploadMedia } from '../../services/media/cloudinary';
 import { apiRequest } from '../../services/api/client';
 
 type Mode = 'post' | 'reel' | 'story';
-type Audience = 'Public' | 'Friends' | 'Only me';
+type Audience = 'Public' | 'Friends' | 'Close friends' | 'Only me';
+type InteractiveType = 'quiz' | 'question' | 'countdown';
 
 export function CreatePostScreen({
   onClose,
@@ -32,6 +33,15 @@ export function CreatePostScreen({
   const [mode, setMode] = useState<Mode>('post');
   const [text, setText] = useState('');
   const [audience, setAudience] = useState<Audience>('Friends');
+  const [contentWarning, setContentWarning] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [interactionType, setInteractionType] = useState<'poll' | InteractiveType | ''>('');
+  const [interactionPrompt, setInteractionPrompt] = useState('');
+  const [interactionOptions, setInteractionOptions] = useState(['', '']);
+  const [interactionAnswer, setInteractionAnswer] = useState('');
+  const [draftId, setDraftId] = useState<string | undefined>();
+  const [templateId, setTemplateId] = useState('');
+  const [brandedCoverUrl, setBrandedCoverUrl] = useState('');
   const [location, setLocation] = useState('');
   const [accessibilityText, setAccessibilityText] = useState('');
   const [scheduledFor, setScheduledFor] = useState<Date | null>(null);
@@ -63,7 +73,7 @@ export function CreatePostScreen({
     (mode !== 'reel' ||
       (media.length === 1 && media[0].type?.startsWith('video')));
   const audienceValue =
-    audience === 'Only me' ? 'private' : audience.toLowerCase();
+    audience === 'Only me' ? 'private' : audience === 'Close friends' ? 'close-friends' : audience.toLowerCase();
 
   const choose = async (type: 'photo' | 'video') => {
     try {
@@ -101,6 +111,11 @@ export function CreatePostScreen({
             isReel: mode === 'reel',
             status: 'draft',
             accessibilityText,
+            contentWarning,
+            templateId,
+            brandedCoverUrl,
+            poll: interactionType === 'poll' ? {question: interactionPrompt, options: interactionOptions.filter(Boolean).map(label => ({label}))} : undefined,
+            interactive: interactionType && interactionType !== 'poll' ? {type: interactionType, prompt: interactionPrompt, options: interactionOptions.filter(Boolean), answer: interactionAnswer || undefined} : undefined,
             publisherType: user.accountType === 'page' ? 'page' : 'personal',
           }),
         },
@@ -136,6 +151,11 @@ export function CreatePostScreen({
         status: scheduledFor ? 'scheduled' : 'published',
         scheduledFor: scheduledFor?.toISOString() ?? null,
         accessibilityText,
+        contentWarning,
+        templateId,
+        brandedCoverUrl,
+        poll: interactionType === 'poll' ? {question: interactionPrompt, options: interactionOptions.filter(Boolean).map(label => ({label}))} : undefined,
+        interactive: interactionType && interactionType !== 'poll' ? {type: interactionType, prompt: interactionPrompt, options: interactionOptions.filter(Boolean), answer: interactionAnswer || undefined} : undefined,
         publisherType: user.accountType === 'page' ? 'page' : 'personal',
       };
       if (mode === 'story')
@@ -166,6 +186,13 @@ export function CreatePostScreen({
       setBusy(false);
     }
   };
+  useEffect(() => {
+    if (mode !== 'post' || (!text.trim() && !interactionPrompt.trim()) || busy) return;
+    const timer = setTimeout(() => {
+      void apiRequest<any>('/posts/drafts/autosave', {method:'POST', body:JSON.stringify({draftId, body:text, audience:audienceValue, location, accessibilityText, contentWarning, templateId, brandedCoverUrl, hashtags:tags, mentions, publisherType:user.accountType==='page'?'page':'personal', poll: interactionType === 'poll' ? {question:interactionPrompt, options:interactionOptions.filter(Boolean).map(label => ({label}))} : undefined, interactive: interactionType && interactionType !== 'poll' ? {type:interactionType, prompt:interactionPrompt, options:interactionOptions.filter(Boolean), answer:interactionAnswer || undefined} : undefined})}, accessToken).then(result => setDraftId(result._id)).catch(() => undefined);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [accessToken, audienceValue, audience, brandedCoverUrl, busy, contentWarning, draftId, interactionAnswer, interactionOptions, interactionPrompt, interactionType, location, mode, mentions, tags, templateId, text, user.accountType, accessibilityText]);
   const setModeAndReset = (next: Mode) => {
     setMode(next);
     setMedia([]);
@@ -230,6 +257,8 @@ export function CreatePostScreen({
                   audience === 'Public'
                     ? 'Friends'
                     : audience === 'Friends'
+                    ? 'Close friends'
+                    : audience === 'Close friends'
                     ? 'Only me'
                     : 'Public',
                 )
@@ -276,6 +305,15 @@ export function CreatePostScreen({
           textAlignVertical="top"
         />
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {mode === 'post' ? <Pressable style={styles.advancedToggle} onPress={() => setShowAdvanced(value => !value)}><Text style={styles.advancedText}>{showAdvanced ? 'Hide advanced options' : 'Advanced content options'} · {draftId ? 'Draft autosaved' : 'Autosaves while you type'}</Text></Pressable> : null}
+        {showAdvanced && mode === 'post' ? <View style={styles.advancedBox}>
+          <TextInput value={contentWarning} onChangeText={setContentWarning} placeholder="Content warning (optional)" placeholderTextColor={colors.muted} style={styles.location}/>
+          <Text style={styles.optionLabel}>Post template</Text><ScrollView horizontal showsHorizontalScrollIndicator={false}>{['', 'minimal', 'bold', 'announcement'].map(value => <Pressable key={value || 'none'} onPress={() => setTemplateId(value)} style={[styles.optionChip, templateId === value && styles.optionChipActive]}><Text style={[styles.optionChipText, templateId === value && styles.optionChipTextActive]}>{value || 'None'}</Text></Pressable>)}</ScrollView>
+          <TextInput value={brandedCoverUrl} onChangeText={setBrandedCoverUrl} placeholder="Branded cover image URL (optional)" placeholderTextColor={colors.muted} style={styles.location}/>
+          <Text style={styles.optionLabel}>Interactive post</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>{(['', 'poll', 'quiz', 'question', 'countdown'] as const).map(value => <Pressable key={value || 'none'} onPress={() => setInteractionType(value)} style={[styles.optionChip, interactionType === value && styles.optionChipActive]}><Text style={[styles.optionChipText, interactionType === value && styles.optionChipTextActive]}>{value ? value[0].toUpperCase()+value.slice(1) : 'None'}</Text></Pressable>)}</ScrollView>
+          {interactionType ? <><TextInput value={interactionPrompt} onChangeText={setInteractionPrompt} placeholder={interactionType === 'question' ? 'Ask your question' : interactionType === 'countdown' ? 'Countdown title' : 'Question or prompt'} placeholderTextColor={colors.muted} style={styles.location}/>{interactionType !== 'countdown' ? interactionOptions.map((value,index)=><TextInput key={index} value={value} onChangeText={next => setInteractionOptions(items => items.map((item,itemIndex)=>itemIndex===index?next:item))} placeholder={`Option ${index+1}`} placeholderTextColor={colors.muted} style={styles.location}/>) : null}{interactionType === 'quiz' ? <TextInput value={interactionAnswer} onChangeText={setInteractionAnswer} placeholder="Correct answer (optional)" placeholderTextColor={colors.muted} style={styles.location}/> : null}</> : null}
+        </View> : null}
         {media.length > 0 && (
           <ScrollView horizontal style={styles.previewRow}>
             {media.map((item, index) => (
@@ -560,4 +598,12 @@ const styles = StyleSheet.create({
   scheduleAction: { color: colors.blue, fontWeight: '900', fontSize: 12 },
   draftButton: { alignItems: 'center', padding: spacing.md },
   draftText: { color: colors.blue, fontWeight: '900' },
+  advancedToggle: { marginTop: spacing.md, padding: spacing.sm, alignItems: 'center' },
+  advancedText: { color: colors.blue, fontSize: 12, fontWeight: '800' },
+  advancedBox: { backgroundColor: colors.surfaceAlt, borderRadius: radius.lg, padding: spacing.sm, marginTop: spacing.sm },
+  optionLabel: { color: colors.ink, fontWeight: '900', fontSize: 13, marginTop: spacing.sm },
+  optionChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginRight: spacing.sm, marginTop: spacing.sm },
+  optionChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  optionChipText: { color: colors.muted, fontWeight: '800', fontSize: 12 },
+  optionChipTextActive: { color: '#fff' },
 });

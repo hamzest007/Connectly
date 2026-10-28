@@ -3,6 +3,8 @@ import {z} from 'zod';
 import {asyncHandler} from '../../common/asyncHandler';
 import {HttpError, ok} from '../../common/http';
 import {AuthRequest, requireAdmin, requireAuth} from '../../middleware/auth';
+import {requirePermission} from '../../middleware/auth';
+import crypto from 'node:crypto';
 import {User} from '../auth/auth.model';
 import {Post, Comment, PostView, Reaction} from '../posts/post.model';
 import {Report} from '../reports/report.model';
@@ -16,7 +18,7 @@ import {Group, GroupMember} from '../groups/group.model';
 const router=Router();
 router.use(requireAuth, requireAdmin);
 
-const audit = (req:AuthRequest, action:string, targetType:'user'|'post'|'reel'|'page'|'comment'|'report'|'story'|'listing'|'config'|'verification'|'group', targetId:string, metadata:Record<string,unknown>={}) => AuditLog.create({actorId:req.userId,action,targetType:targetType==='reel'?'post':targetType==='page'?'user':targetType,targetId,metadata});
+const audit = async (req:AuthRequest, action:string, targetType:'user'|'post'|'reel'|'page'|'comment'|'report'|'story'|'listing'|'config'|'verification'|'group', targetId:string, metadata:Record<string,unknown>={}) => { const previous=await AuditLog.findOne().sort({createdAt:-1}).select('integrityHash').lean(); const payload={actorId:req.userId,action,targetType:targetType==='reel'?'post':targetType,targetId,metadata,ip:req.ip,userAgent:req.get('user-agent')??''}; const integrityHash=crypto.createHash('sha256').update(JSON.stringify({previousHash:previous?.integrityHash??'',...payload})).digest('hex'); return AuditLog.create({...payload,previousHash:previous?.integrityHash??'',integrityHash}); };
 
 router.get('/overview', asyncHandler(async(_req,res)=>{
   const [users,publishedPosts,openReports,suspended,dailyActiveUsers,engagement] = await Promise.all([User.countDocuments(),Post.countDocuments({status:'published'}),Report.countDocuments({status:{$in:['open','reviewing']}}),User.countDocuments({status:'suspended'}),PostView.distinct('userId',{viewedAt:{$gte:new Date(Date.now()-86400000)}}).then(ids=>ids.length),Post.aggregate([{$match:{status:'published'}},{$group:{_id:null,likes:{$sum:'$reactionCount'},comments:{$sum:'$commentCount'},shares:{$sum:'$shareCount'},views:{$sum:'$viewCount'}}}]).then(rows=>rows[0]??{likes:0,comments:0,shares:0,views:0})]);
@@ -35,9 +37,9 @@ router.get('/analytics', asyncHandler(async(_req,res)=>{
 }));
 
 router.get('/users', asyncHandler(async(req,res)=>{
-  const limit=Math.min(Math.max(Number(req.query.limit??25),1),100); const q=String(req.query.q??'').trim(); const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{username:{$regex:q,$options:'i'}},{email:{$regex:q,$options:'i'}}]}:{};
-  const users=await User.find(filter).select('name username email role status accountType pageEnabled pageName pageUsername privateAccount isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).limit(limit);
-  return ok(res,{items:users});
+  const limit=Math.min(Math.max(Number(req.query.limit??25),1),100); const page=Math.max(Number(req.query.page??1),1); const q=String(req.query.q??'').trim(); const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{username:{$regex:q,$options:'i'}},{email:{$regex:q,$options:'i'}}]}:{};
+  const [items,total]=await Promise.all([User.find(filter).select('name username email role status accountType pageEnabled pageName pageUsername privateAccount isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).skip((page-1)*limit).limit(limit),User.countDocuments(filter)]);
+  return ok(res,{items,page,limit,total,totalPages:Math.ceil(total/limit)});
 }));
 
 router.get('/content', asyncHandler(async(req,res)=>{
@@ -64,12 +66,12 @@ router.get('/groups', asyncHandler(async(req,res)=>{
   return ok(res,items);
 }));
 router.patch('/groups/:id', asyncHandler(async(req:AuthRequest,res)=>{
-  const data=z.object({visibility:z.enum(['public','private','invite-only']).optional(),description:z.string().trim().max(1000).optional()}).parse(req.body);
+  const data=z.object({name:z.string().trim().min(2).max(100).optional(),visibility:z.enum(['public','private','invite-only']).optional(),description:z.string().trim().max(1000).optional(),joinApprovalRequired:z.boolean().optional(),postApprovalRequired:z.boolean().optional()}).parse(req.body);
   const group=await Group.findByIdAndUpdate(req.params.id,data,{new:true,runValidators:true}).populate('createdBy','name username');
   if(!group)throw new HttpError(404,'Group not found.'); await audit(req,'update_group','group',String(group._id),data); return ok(res,group);
 }));
 
-router.patch('/users/:id/status', asyncHandler(async(req:AuthRequest,res)=>{
+router.patch('/users/:id/status', requirePermission('manage_users'), asyncHandler(async(req:AuthRequest,res)=>{
   const data=z.object({status:z.enum(['active','suspended']),reason:z.string().trim().max(500).default(''),days:z.number().int().min(1).max(365).optional()}).parse(req.body);
   if(req.params.id===req.userId) throw new HttpError(400,'You cannot suspend your own admin account.');
   const suspendedUntil=data.status==='suspended' ? new Date(Date.now()+(data.days??30)*86400000) : null;
@@ -77,11 +79,11 @@ router.patch('/users/:id/status', asyncHandler(async(req:AuthRequest,res)=>{
   if(!user) throw new HttpError(404,'User not found.'); await audit(req,data.status==='suspended'?'suspend_user':'restore_user','user',id,{reason:data.reason,days:data.days}); return ok(res,user);
 }));
 
-router.patch('/users/:id/role', asyncHandler(async(req:AuthRequest,res)=>{
+router.patch('/users/:id/role', requirePermission('manage_config'), asyncHandler(async(req:AuthRequest,res)=>{
   const data=z.object({role:z.enum(['user','moderator','admin'])}).parse(req.body); const id=String(req.params.id); const user=await User.findByIdAndUpdate(id,{role:data.role},{new:true}).select('name username email role status'); if(!user)throw new HttpError(404,'User not found.'); await audit(req,'change_role','user',id,{role:data.role}); return ok(res,user);
 }));
 
-router.patch('/users/:id/profile-settings', asyncHandler(async(req:AuthRequest,res)=>{
+router.patch('/users/:id/profile-settings', requirePermission('manage_users'), asyncHandler(async(req:AuthRequest,res)=>{
   const data=z.object({accountType:z.enum(['user','page']).optional(),privateAccount:z.boolean().optional()}).refine(value=>Object.keys(value).length>0,{message:'Provide at least one profile setting.'}).parse(req.body);
   const user=await User.findByIdAndUpdate(req.params.id,data,{new:true,runValidators:true}).select('name username email role status accountType privateAccount');
   if(!user)throw new HttpError(404,'User not found.');

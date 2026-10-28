@@ -24,6 +24,7 @@ type Props = {
       | 'notifications'
       | 'security'
       | 'content'
+      | 'collections'
       | 'accessibility'
       | 'data'
       | 'support'
@@ -39,6 +40,8 @@ type Props = {
 type MenuItem = [string, string, string];
 
 const tools: MenuItem[] = [
+  ['Content preferences', 'Control feeds, muted words and recommendations', '✦'],
+  ['Content collections', 'Organize saved posts into private folders', '▱'],
   ['Friend requests', 'Review and manage people who want to connect', '♧'],
   ['Saved posts', 'Your private collection of bookmarks', '▱'],
   ['Your activity', 'Review likes, comments and account history', '◷'],
@@ -91,6 +94,8 @@ export function SettingsScreen({
     'Close friends': () => onDetail('close-friends'),
     'Creator dashboard': () => onDetail('creator'),
     Monetization: () => onDetail('monetization'),
+    'Content preferences': () => onDetail('content'),
+    'Content collections': () => onDetail('collections'),
   };
   const renderItem = ([title, meta, icon]: MenuItem) => (
     <Pressable

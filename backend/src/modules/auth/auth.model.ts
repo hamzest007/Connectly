@@ -41,10 +41,14 @@ const userSchema = new Schema({
   verificationExpiresAt: {type: Date, default: null},
   passwordResetHash: {type: String, default: ''},
   passwordResetExpiresAt: {type: Date, default: null},
-  role: {type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true},
+  role: {type: String, enum: ['user', 'moderator', 'admin', 'super-admin', 'support-agent', 'analyst', 'finance-manager', 'developer-ops'], default: 'user', index: true},
   status: {type: String, enum: ['active', 'suspended'], default: 'active', index: true},
   suspendedUntil: {type: Date, default: null},
   suspensionReason: {type: String, default: '', maxlength: 500},
+  theme: {type: String, enum: ['light','dark','system'], default: 'system'},
+  accentColor: {type: String, default: '#635BFF'},
+  profileLayout: {type: String, enum: ['standard','compact','featured'], default: 'standard'},
+  featuredSections: {type: [String], default: []},
 }, {timestamps: true});
 
 const refreshTokenSchema = new Schema({
@@ -55,3 +59,10 @@ const refreshTokenSchema = new Schema({
 
 export const User = model('User', userSchema);
 export const RefreshToken = model('RefreshToken', refreshTokenSchema);
+const recommendationPreferencesSchema = new Schema({
+  userId: {type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true},
+  chronological: {type: Boolean, default: false},
+  showReasons: {type: Boolean, default: true},
+  mutedKeywords: {type: [String], default: []},
+}, {timestamps: true});
+export const RecommendationPreferences = model('RecommendationPreferences', recommendationPreferencesSchema);

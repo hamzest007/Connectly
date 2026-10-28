@@ -18,6 +18,9 @@ export type Post = {
   viewerReaction?: Reaction;
   viewerSaved?: boolean;
   pinned?: boolean;
+  recommendationReason?: string;
+  contentWarning?: string;
+  group?: { id: string; name: string; visibility?: string; coverUrl?: string; memberCount?: number };
   media?: { url: string; type: 'image' | 'video'; thumbnailUrl?: string }[];
   repostOf?: {
     id: string;

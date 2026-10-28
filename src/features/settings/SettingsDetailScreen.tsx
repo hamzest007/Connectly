@@ -16,6 +16,7 @@ type Kind =
   | 'notifications'
   | 'security'
   | 'content'
+  | 'collections'
   | 'accessibility'
   | 'data'
   | 'support'
@@ -45,7 +46,12 @@ export function SettingsDetailScreen({
   const [following, setFollowing] = React.useState<any[]>([]);
   const [closeFriends, setCloseFriends] = React.useState<Set<string>>(new Set());
   const [monetization, setMonetization] = React.useState<any>(null);
+  const [studio, setStudio] = React.useState<any>(null);
   const [privacyAccount, setPrivacyAccount] = React.useState(false);
+  const [recommendationPreferences, setRecommendationPreferences] = React.useState<any>(null);
+  const [keyword, setKeyword] = React.useState('');
+  const [collections, setCollections] = React.useState<any[]>([]);
+  const [collectionName, setCollectionName] = React.useState('');
   const labels: { [key in Kind]: [string, string] } = {
     activity: ['Your activity', 'Review your recent account activity.'],
     privacy: [
@@ -64,6 +70,7 @@ export function SettingsDetailScreen({
       'Content preferences',
       'Manage hidden words and sensitive content.',
     ],
+    collections: ['Content collections', 'Organize saved posts into private folders.'],
     accessibility: ['Accessibility', 'Make Connectly easier to use.'],
     data: ['Your data', 'Export or manage your Connectly data.'],
     support: ['Help & support', 'Find answers and contact the Connectly team.'],
@@ -81,8 +88,7 @@ export function SettingsDetailScreen({
       try {
         if (kind === 'activity')
           setItems(await apiRequest<any[]>('/posts/activity', {}, accessToken));
-        if (kind === 'creator')
-          setItems([await apiRequest<any>('/users/me/creator-dashboard', {}, accessToken)]);
+        if (kind === 'creator') setStudio(await apiRequest<any>('/users/me/creator-studio', {}, accessToken));
         if (kind === 'close-friends') {
           const [friends, selected] = await Promise.all([
             apiRequest<any[]>('/follows', {}, accessToken),
@@ -107,6 +113,8 @@ export function SettingsDetailScreen({
           const profile = await apiRequest<{privateAccount?: boolean}>('/users/me', {}, accessToken);
           setPrivacyAccount(Boolean(profile.privateAccount));
         }
+        if (kind === 'content') setRecommendationPreferences(await apiRequest<any>('/users/me/recommendation-preferences', {}, accessToken));
+        if (kind === 'collections') setCollections(await apiRequest<any[]>('/posts/collections', {}, accessToken));
       } catch {
       } finally {
         setLoading(false);
@@ -252,6 +260,15 @@ export function SettingsDetailScreen({
             ),
           )}
         </View>
+      ) : kind === 'collections' ? (
+        <View><Text style={styles.sectionHint}>Collections are private folders for posts you save.</Text><View style={styles.collectionCreate}><TextInput value={collectionName} onChangeText={setCollectionName} placeholder="New collection name" placeholderTextColor={colors.muted} style={styles.collectionInput}/><Pressable onPress={async()=>{if(!collectionName.trim())return;const created=await apiRequest<any>('/posts/collections',{method:'POST',body:JSON.stringify({name:collectionName.trim()})},accessToken);setCollections(value=>[created,...value]);setCollectionName('');}}><Text style={styles.actionText}>Create</Text></Pressable></View>{collections.map(collection=><View style={styles.row} key={collection._id}><View style={styles.copy}><Text style={styles.rowTitle}>{collection.name}</Text><Text style={styles.rowMeta}>{collection.postIds?.length||0} saved posts</Text></View><Pressable onPress={async()=>{await apiRequest(`/posts/collections/${collection._id}`,{method:'DELETE'},accessToken);setCollections(value=>value.filter(item=>item._id!==collection._id));}}><Text style={styles.actionText}>Delete</Text></Pressable></View>)}{!collections.length?<Text style={styles.empty}>Create your first private collection.</Text>:null}</View>
+      ) : kind === 'content' && recommendationPreferences ? (
+        <View>
+          <Pressable style={styles.row} onPress={async () => { const value=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({chronological:!recommendationPreferences.chronological})},accessToken); setRecommendationPreferences(value); }}><View style={styles.copy}><Text style={styles.rowTitle}>Chronological feed</Text><Text style={styles.rowMeta}>Show the newest posts first</Text></View><View style={[styles.toggle,recommendationPreferences.chronological&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.chronological&&styles.thumbOn]}/></View></Pressable>
+          <Pressable style={styles.row} onPress={async () => { const value=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({showReasons:!recommendationPreferences.showReasons})},accessToken); setRecommendationPreferences(value); }}><View style={styles.copy}><Text style={styles.rowTitle}>Why posts are recommended</Text><Text style={styles.rowMeta}>Show explanations on suggested posts</Text></View><View style={[styles.toggle,recommendationPreferences.showReasons&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.showReasons&&styles.thumbOn]}/></View></Pressable>
+          <View style={styles.keywordBox}><Text style={styles.rowTitle}>Mute keywords</Text><Text style={styles.rowMeta}>Hide posts containing these words or phrases.</Text><View style={styles.keywordInputRow}><TextInput value={keyword} onChangeText={setKeyword} placeholder="Add a word or phrase" placeholderTextColor={colors.muted} style={styles.keywordInput}/><Pressable onPress={async()=>{if(!keyword.trim())return; const value=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({mutedKeywords:[...(recommendationPreferences.mutedKeywords||[]),keyword.trim()]})},accessToken); setRecommendationPreferences(value);setKeyword('');}}><Text style={styles.actionText}>Add</Text></Pressable></View>{(recommendationPreferences.mutedKeywords||[]).map((value:string)=><View style={styles.keywordPill} key={value}><Text style={styles.keywordText}>{value}</Text><Pressable onPress={async()=>{const updated=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({mutedKeywords:(recommendationPreferences.mutedKeywords||[]).filter((item:string)=>item!==value)})},accessToken);setRecommendationPreferences(updated);}}><Text style={styles.keywordRemove}>×</Text></Pressable></View>)}</View>
+          <Pressable style={styles.primary} onPress={()=>Alert.alert('Reset personalized recommendations','This clears your feed preferences and muted keywords.',[{text:'Cancel',style:'cancel'},{text:'Reset',style:'destructive',onPress:async()=>{await apiRequest('/users/me/recommendation-preferences/reset',{method:'POST'},accessToken);setRecommendationPreferences({chronological:false,showReasons:true,mutedKeywords:[]});}}])}><Text style={styles.primaryText}>Reset personalized recommendations</Text></Pressable>
+        </View>
       ) : kind === 'security' ? (
         <View>
           {items.map(item => (
@@ -299,20 +316,19 @@ export function SettingsDetailScreen({
       ) : kind === 'monetization' ? (
         <View>
           <Text style={styles.sectionHint}>Your settings are saved to your account and can be changed anytime.</Text>
-          {(['enabled','tipsEnabled','subscriptionsEnabled'] as const).map(key => <Pressable style={styles.row} key={key} onPress={() => { const next = {...monetization, [key]: !monetization?.[key]}; setMonetization(next); void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({[key]:next[key]})},accessToken); }}><View style={styles.copy}><Text style={styles.rowTitle}>{key === 'enabled' ? 'Enable monetization' : key === 'tipsEnabled' ? 'Accept tips' : 'Offer subscriptions'}</Text><Text style={styles.rowMeta}>{monetization?.[key] ? 'Enabled' : 'Disabled'}</Text></View><Text style={styles.actionText}>{monetization?.[key] ? 'On' : 'Off'}</Text></Pressable>)}
+          {(['enabled','tipsEnabled','subscriptionsEnabled','virtualGiftsEnabled'] as const).map(key => <Pressable style={styles.row} key={key} onPress={() => { const next = {...monetization, [key]: !monetization?.[key]}; setMonetization(next); void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({[key]:next[key]})},accessToken); }}><View style={styles.copy}><Text style={styles.rowTitle}>{key === 'enabled' ? 'Enable monetization' : key === 'tipsEnabled' ? 'Accept tips' : key === 'subscriptionsEnabled' ? 'Offer subscriptions' : 'Accept virtual gifts'}</Text><Text style={styles.rowMeta}>{monetization?.[key] ? 'Enabled' : 'Disabled'}</Text></View><Text style={styles.actionText}>{monetization?.[key] ? 'On' : 'Off'}</Text></Pressable>)}
           <TextInput value={monetization?.payoutEmail ?? ''} onChangeText={value => setMonetization({...monetization,payoutEmail:value})} onEndEditing={() => void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({payoutEmail:monetization?.payoutEmail ?? ''})},accessToken)} placeholder="Payout email" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" style={styles.input} />
         </View>
-      ) : kind === 'creator' ? (
+      ) : kind === 'creator' && studio ? (
         <View>
-          {Object.entries(items[0] ?? {}).filter(([key]) => key !== '_id').map(([key, value]) => (
-            <View style={styles.row} key={key}>
-              <View style={styles.copy}>
-                <Text style={styles.rowTitle}>{key[0].toUpperCase() + key.slice(1)}</Text>
-                <Text style={styles.rowMeta}>Lifetime creator metric</Text>
-              </View>
-              <Text style={styles.metricValue}>{String(value)}</Text>
-            </View>
-          ))}
+          <Text style={styles.studioSection}>Overview</Text>
+          <View style={styles.metricGrid}>{[['Views',studio.summary.views],['Reach',studio.summary.reach],['Engagement',studio.summary.likes+studio.summary.comments+studio.summary.shares],['Watch time',`${Math.round((studio.summary.watchTimeSeconds||0)/60)}m`],['Followers',studio.followers],['Posts',studio.summary.posts]].map(([label,value])=><View style={styles.metricCard} key={String(label)}><Text style={styles.metricValue}>{String(value)}</Text><Text style={styles.rowMeta}>{String(label)}</Text></View>)}</View>
+          <Text style={styles.studioSection}>Best-performing posts</Text>
+          {(studio.topPosts||[]).map((post:any)=><View style={styles.row} key={post._id}><View style={styles.copy}><Text style={styles.rowTitle} numberOfLines={2}>{post.body || 'Media post'}</Text><Text style={styles.rowMeta}>{post.reactionCount} likes · {post.commentCount} comments · {post.viewCount||0} views</Text></View></View>)}
+          <Text style={styles.studioSection}>Content calendar</Text>
+          {(studio.scheduled||[]).map((post:any)=><View style={styles.row} key={post._id}><View style={styles.copy}><Text style={styles.rowTitle}>{post.body || 'Scheduled media'}</Text><Text style={styles.rowMeta}>{new Date(post.scheduledFor).toLocaleString()}</Text></View></View>)}
+          <Text style={styles.studioSection}>Saved drafts & media library</Text><Text style={styles.sectionHint}>{studio.drafts?.length||0} drafts · {studio.mediaLibrary?.length||0} media items</Text>
+          {(studio.collaborationRequests||[]).map((request:any)=><View style={styles.row} key={request._id}><View style={styles.copy}><Text style={styles.rowTitle}>{request.brandName}</Text><Text style={styles.rowMeta}>{request.brief || 'Brand collaboration request'} · {request.status}</Text></View>{request.status==='pending'?<View style={styles.requestActions}><Pressable onPress={()=>void apiRequest(`/users/me/collaboration-requests/${request._id}`,{method:'PATCH',body:JSON.stringify({status:'accepted'})},accessToken).then(()=>setStudio({...studio,collaborationRequests:studio.collaborationRequests.map((item:any)=>item._id===request._id?{...item,status:'accepted'}:item)}))}><Text style={styles.actionText}>Accept</Text></Pressable><Pressable onPress={()=>void apiRequest(`/users/me/collaboration-requests/${request._id}`,{method:'PATCH',body:JSON.stringify({status:'declined'})},accessToken)}><Text style={styles.actionText}>Decline</Text></Pressable></View>:null}</View>)}
         </View>
       ) : kind === 'activity' ? (
         <View>
@@ -437,4 +453,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   primaryText: { color: '#fff', fontWeight: '900' },
+  collectionCreate: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  collectionInput: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, color: colors.ink, marginRight: spacing.sm },
+  studioSection: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: spacing.md, marginBottom: spacing.sm },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metricCard: { width: '31%', minHeight: 76, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.sm },
+  requestActions: { gap: spacing.sm },
+  keywordBox: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
+  keywordInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
+  keywordInput: { flex: 1, color: colors.ink, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.sm, marginRight: spacing.md },
+  keywordPill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: colors.canvas, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 6, marginTop: spacing.sm },
+  keywordText: { color: colors.ink, fontSize: 12 },
+  keywordRemove: { color: colors.muted, fontSize: 18, marginLeft: spacing.sm },
 });

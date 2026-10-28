@@ -43,6 +43,9 @@ type ApiPost = {
   pinned?: boolean;
   viewerReaction?: Post['viewerReaction'] | null;
   viewerSaved?: boolean;
+  recommendationReason?: string;
+  contentWarning?: string;
+  groupId?: { _id: string; name: string; visibility?: string; coverUrl?: string; memberCount?: number } | null;
   media?: Post['media'];
   repostOf?: { _id: string; body: string; createdAt: string; media?: Post['media']; authorId: { _id: string; name: string; username: string; avatarUrl?: string } | null } | null;
   authorId: {
@@ -81,6 +84,7 @@ export function FeedScreen({
   onFocusHandled,
   user,
   onOpenProfile,
+  onOpenGroup,
   initialMode = 'for-you',
 }: {
   onCreatePost: () => void;
@@ -99,6 +103,7 @@ export function FeedScreen({
     name: string;
     username: string;
   }) => void;
+  onOpenGroup?: (groupId: string) => void;
   initialMode?: FeedMode;
 }) {
   const [posts, setPosts] = React.useState<Post[]>([]);
@@ -111,6 +116,7 @@ export function FeedScreen({
   const [selectedStory, setSelectedStory] = React.useState<Story | null>(null);
   const [selectedStoryIndex, setSelectedStoryIndex] = React.useState(0);
   const [videoPaused, setVideoPaused] = React.useState(false);
+  const [recommendationPreferences, setRecommendationPreferences] = React.useState({chronological: false, showReasons: true});
   const storyProgress = React.useRef(new Animated.Value(0)).current;
   const suppressNextFeedLoad = React.useRef(false);
   const initials = user.name
@@ -135,6 +141,9 @@ export function FeedScreen({
       comments: item.commentCount,
       shares: item.shareCount,
       pinned: item.pinned,
+      recommendationReason: item.recommendationReason,
+      contentWarning: item.contentWarning,
+      group: item.groupId ? {id: item.groupId._id, name: item.groupId.name, visibility: item.groupId.visibility, coverUrl: item.groupId.coverUrl, memberCount: item.groupId.memberCount} : undefined,
       viewerReaction: item.viewerReaction ?? undefined,
       viewerSaved: item.viewerSaved,
       media: item.media,
@@ -194,7 +203,7 @@ export function FeedScreen({
           suppressNextFeedLoad.current = false;
           return;
         }
-        const query = `/posts?feed=${mode}&limit=12${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''
+        const query = `/posts?feed=${mode}&limit=12${recommendationPreferences.chronological ? '&chronological=true' : ''}${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''
           }`;
         const result = await apiRequest<{
           items: ApiPost[];
@@ -213,8 +222,11 @@ export function FeedScreen({
         setLoadingMore(false);
       }
     },
-    [accessToken, mode, cursor, focusPostId, onFocusHandled],
+    [accessToken, mode, cursor, focusPostId, onFocusHandled, recommendationPreferences.chronological],
   );
+  React.useEffect(() => {
+    void apiRequest<{chronological:boolean; showReasons:boolean}>('/users/me/recommendation-preferences', {}, accessToken).then(setRecommendationPreferences).catch(() => undefined);
+  }, [accessToken]);
   React.useEffect(() => {
     setCursor(null);
     void load(true);
@@ -286,6 +298,9 @@ export function FeedScreen({
             <View style={styles.onlineDot} />
           </Pressable>
         </View>
+      </View>
+      <View style={styles.preferenceHint}>
+        <Text style={styles.preferenceHintText}>{recommendationPreferences.chronological ? 'Chronological feed' : 'Personalized feed'} · Manage in Content preferences</Text>
       </View>
       <Pressable style={styles.homeSearch} onPress={onOpenSearch}>
         <Text style={styles.homeSearchIcon}>⌕</Text>
@@ -451,7 +466,9 @@ export function FeedScreen({
             canDelete={item.author.id === user.id}
             initialSaved={mode === 'saved' || item.viewerSaved}
             initialShowComments={focusComments && item.id === focusPostId}
+            recommendationReason={recommendationPreferences.showReasons ? item.recommendationReason : undefined}
             onOpenProfile={onOpenProfile}
+            onOpenGroup={onOpenGroup}
             onHidden={id =>
               setPosts(current => current.filter(post => post.id !== id))
             }
@@ -1021,6 +1038,8 @@ Object.assign(styles, {
     borderRadius: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
+  preferenceHint: { marginTop: -spacing.sm, marginBottom: spacing.md },
+  preferenceHintText: { color: colors.muted, fontSize: 11 },
   storyIndicatorActive: {
     backgroundColor: '#fff',
     width: 24,

@@ -35,11 +35,13 @@ export function PostCard({
   canDelete,
   onHidden,
   onOpenProfile,
+  onOpenGroup,
   initialSaved,
   onSaved,
   onEdited,
   onReposted,
   initialShowComments,
+  recommendationReason,
 }: {
   post: Post;
   accessToken: string;
@@ -50,11 +52,13 @@ export function PostCard({
     name: string;
     username: string;
   }) => void;
+  onOpenGroup?: (groupId: string) => void;
   initialSaved?: boolean;
   onSaved?: (id: string, saved: boolean) => void;
   onEdited?: (id: string) => void;
   onReposted?: () => void;
   initialShowComments?: boolean;
+  recommendationReason?: string;
 }) {
   const [selectedReaction, setSelectedReaction] = useState<Reaction | null>(post.viewerReaction ?? null);
   const liked = Boolean(selectedReaction);
@@ -71,12 +75,22 @@ export function PostCard({
   const [pinned, setPinned] = useState(Boolean(post.pinned));
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [resolvedGroupCover, setResolvedGroupCover] = useState(post.group?.coverUrl);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editBody, setEditBody] = useState(post.body);
   const [editing, setEditing] = useState(false);
   React.useEffect(() => {
     setSaved(Boolean(initialSaved));
   }, [initialSaved, post.id]);
+  React.useEffect(() => {
+    setResolvedGroupCover(post.group?.coverUrl);
+    if (!post.group?.id || post.group.coverUrl) return;
+    let active = true;
+    void apiRequest<{coverUrl?: string}>(`/groups/${post.group.id}`, {}, accessToken)
+      .then(group => { if (active && group.coverUrl) setResolvedGroupCover(group.coverUrl); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [accessToken, post.group?.coverUrl, post.group?.id]);
   const emojis = [
     '😀',
     '😂',
@@ -324,13 +338,25 @@ export function PostCard({
           >
             <Text style={styles.name}>{post.author.name}</Text>
             <Text style={styles.meta}>
-              @{post.author.username} · {post.createdAt}
+              @{post.author.username} · {post.createdAt}{post.group ? ` · in ${post.group.name}` : ''}
             </Text>
           </Pressable>
           <Pressable onPress={() => setShowMenu(value => !value)}>
             <Text style={styles.more}>•••</Text>
           </Pressable>
         </View>
+        {post.group ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${post.group.name} group`}
+            onPress={() => onOpenGroup?.(post.group!.id)}
+            style={({pressed}) => [styles.groupContext, pressed && styles.groupContextPressed]}
+          >
+            {resolvedGroupCover ? <Image source={{uri: resolvedGroupCover}} style={styles.groupContextImage} /> : <View style={styles.groupContextFallback}><Text style={styles.groupContextFallbackText}>{post.group.name.slice(0, 1).toUpperCase()}</Text></View>}
+            <View style={styles.groupContextCopy}><Text style={styles.groupContextName}>{post.group.name}</Text><Text style={styles.groupContextMeta}>{post.group.visibility === 'private' ? 'Private group' : 'Public group'}{post.group.memberCount ? ` · ${post.group.memberCount.toLocaleString()} members` : ''}</Text></View>
+            <Text style={styles.groupContextChevron}>›</Text>
+          </Pressable>
+        ) : null}
         {showMenu && (
           <View style={styles.menu}>
             <Text style={styles.menuTitle}>More options</Text>
@@ -395,6 +421,8 @@ export function PostCard({
             <Text style={styles.pinnedText}>✦ Pinned post</Text>
           </View>
         ) : null}
+        {recommendationReason ? <Text style={styles.recommendationReason}>✦ {recommendationReason}</Text> : null}
+        {post.contentWarning ? <Text style={styles.contentWarning}>⚠ {post.contentWarning}</Text> : null}
         {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
         {post.repostOf ? (
           <View style={styles.repost}>
@@ -767,6 +795,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontSize: 18,
   },
+  recommendationReason: { color: colors.muted, fontSize: 11, marginTop: spacing.sm },
+  contentWarning: { color: colors.danger, fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
+  groupContext: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  groupContextPressed: { opacity: 0.72, transform: [{scale: 0.99}] },
+  groupContextImage: { width: 38, height: 38, borderRadius: 12 },
+  groupContextFallback: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  groupContextFallbackText: { color: '#fff', fontWeight: '900', fontSize: 18 },
+  groupContextCopy: { flex: 1, marginLeft: spacing.sm },
+  groupContextName: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  groupContextMeta: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  groupContextChevron: { color: colors.muted, fontSize: 24, paddingHorizontal: spacing.xs },
   body: {
     fontSize: 16,
     lineHeight: 24,
