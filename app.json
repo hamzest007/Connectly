@@ -1,4 +1,5 @@
 {
   "name": "Connectly",
-  "displayName": "Connectly"
+  "displayName": "Connectly",
+  "scheme": "connectly"
 }

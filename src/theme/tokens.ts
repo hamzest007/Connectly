@@ -1,31 +1,31 @@
 export const colors = {
-  // Modern primary colors
-  primary: '#6366F1',
-  primaryDark: '#4F46E5',
-  primaryLight: '#818CF8',
-  accent: '#EC4899',
+  // Connectly's calm indigo + sky visual system
+  primary: '#5661E8',
+  primaryDark: '#4148C7',
+  primaryLight: '#7B83F0',
+  accent: '#E05AC7',
 
   // Modern secondary colors (with backward compatibility)
-  blue: '#6366F1',
-  blueDeep: '#4F46E5',
-  blueSoft: '#E0E7FF',
+  blue: '#5661E8',
+  blueDeep: '#4148C7',
+  blueSoft: '#EEF0FF',
 
   // Text colors
-  ink: '#0F172A',
-  inkLight: '#1E293B',
-  muted: '#64748B',
-  mutedLight: '#94A3B8',
+  ink: '#182230',
+  inkLight: '#344054',
+  muted: '#667085',
+  mutedLight: '#98A2B3',
 
   // Background colors
   surface: '#FFFFFF',
-  canvas: '#F1F5F9',
-  surfaceAlt: '#F8FAFC',
+  canvas: '#F7F8FC',
+  surfaceAlt: '#F2F4F7',
 
   // Accent backgrounds
-  lavender: '#E0E7FF',
-  mint: '#D1FAE5',
-  peach: '#FED7AA',
-  yellow: '#FEF3C7',
+  lavender: '#EEF0FF',
+  mint: '#DDF8EE',
+  peach: '#FFF0E5',
+  yellow: '#FFF6D8',
 
   // Status colors
   success: '#10B981',
@@ -33,8 +33,8 @@ export const colors = {
   warning: '#F59E0B',
 
   // Border
-  border: '#E2E8F0',
-  borderLight: '#F1F5F9',
+  border: '#E4E7EC',
+  borderLight: '#F0F2F5',
 };
 // Compatibility alias for legacy style declarations; the app has one light theme only.
 export const darkColors = colors;
@@ -50,26 +50,26 @@ export const spacing = {
 };
 
 export const radius = {
-  xs: 8,
-  sm: 12,
-  md: 16,
-  lg: 20,
+  xs: 6,
+  sm: 10,
+  md: 14,
+  lg: 18,
   xl: 24,
   pill: 999,
 };
 
 export const shadow = {
-  shadowColor: '#000000',
-  shadowOpacity: 0.08,
-  shadowRadius: 16,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 5,
+  shadowColor: '#17204D',
+  shadowOpacity: 0.07,
+  shadowRadius: 14,
+  shadowOffset: { width: 0, height: 5 },
+  elevation: 3,
 };
 
 export const shadowLarge = {
-  shadowColor: '#000000',
-  shadowOpacity: 0.12,
-  shadowRadius: 24,
-  shadowOffset: { width: 0, height: 8 },
-  elevation: 8,
+  shadowColor: '#17204D',
+  shadowOpacity: 0.1,
+  shadowRadius: 22,
+  shadowOffset: { width: 0, height: 9 },
+  elevation: 6,
 };

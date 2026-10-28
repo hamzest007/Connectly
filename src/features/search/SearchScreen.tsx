@@ -36,16 +36,20 @@ type SearchResponse = {
 };
 export function SearchScreen({
   accessToken,
+  initialQuery = '',
+  onBack,
   onOpenProfile,
 }: {
   accessToken: string;
+  initialQuery?: string;
+  onBack?: () => void;
   onOpenProfile?: (user: {
     id?: string;
     name: string;
     username: string;
   }) => void;
 }) {
-  const [query, setQuery] = React.useState('');
+  const [query, setQuery] = React.useState(initialQuery);
   const [type, setType] = React.useState('all');
   const [result, setResult] = React.useState<SearchResponse | null>(null);
   const [trending, setTrending] = React.useState<
@@ -83,12 +87,23 @@ export function SearchScreen({
       })
       .catch(() => undefined);
   }, [accessToken]);
+  React.useEffect(() => {
+    if (initialQuery.trim()) {
+      setQuery(initialQuery);
+      void load(initialQuery);
+    }
+  }, [initialQuery]);
   const filters = ['all', 'users', 'posts', 'reels', 'hashtags'];
   return (
     <View style={styles.page}>
       <View style={styles.header}>
+        {onBack ? (
+          <Pressable onPress={onBack} style={styles.backButton}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
+        ) : null}
         <Text style={styles.kicker}>DISCOVER</Text>
-        <Text style={styles.title}>Search & Explore</Text>
+        <Text style={styles.title}>Search</Text>
         <Text style={styles.subtitle}>
           Find people, conversations, creators and ideas.
         </Text>
@@ -99,7 +114,7 @@ export function SearchScreen({
           value={query}
           onChangeText={setQuery}
           onSubmitEditing={() => void load()}
-          placeholder="Search anything"
+          placeholder="Search people, posts or hashtags"
           placeholderTextColor={colors.muted}
           style={styles.input}
           returnKeyType="search"
@@ -287,6 +302,8 @@ export function SearchScreen({
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.canvas, padding: spacing.md },
   header: { marginTop: spacing.sm, marginBottom: spacing.lg },
+  backButton: { marginBottom: spacing.sm },
+  backText: { color: colors.blue, fontSize: 14, fontWeight: '800' },
   kicker: {
     fontSize: 10,
     letterSpacing: 2,

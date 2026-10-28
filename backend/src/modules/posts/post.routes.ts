@@ -45,7 +45,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};
   const sort = feed === 'trending' ? {reactionCount:-1, commentCount:-1, shareCount:-1, createdAt:-1} : {createdAt:-1};
-  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl');
+  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
   const reactions = await Reaction.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId type');
   const savedPosts = await SavedPost.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId');
   const reactionByPost = new Map(reactions.map(reaction=>[String(reaction.postId),reaction.type]));
@@ -54,7 +54,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   return ok(res, {items, feed, nextCursor: posts.length === limit ? posts[posts.length - 1].createdAt : null});
 }));
 router.get('/saved', asyncHandler(async (req: AuthRequest, res) => {
-  const saved = await SavedPost.find({userId:req.userId}).sort({createdAt:-1}).populate({path:'postId',populate:{path:'authorId',select:'name username avatarUrl'}}).limit(50);
+  const saved = await SavedPost.find({userId:req.userId}).sort({createdAt:-1}).populate({path:'postId',populate:[{path:'authorId',select:'name username avatarUrl'},{path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}}]}).limit(50);
   return ok(res, saved);
 }));
 router.get('/drafts', asyncHandler(async (req: AuthRequest, res) => {
@@ -65,6 +65,11 @@ router.get('/suggestions', asyncHandler(async (req: AuthRequest, res) => {
   const excluded = [...following, req.userId];
   const posts = await Post.find({authorId: {$nin: excluded}, audience: 'public', $or: [{status: 'published'}, {status: {$exists: false}}]}).sort({reactionCount: -1, createdAt: -1}).limit(12).populate('authorId', 'name username avatarUrl');
   return ok(res, posts);
+}));
+router.get('/:id', asyncHandler(async (req: AuthRequest, res) => {
+  const post = await Post.findOne({_id: req.params.id, archived: {$ne: true}}).populate('authorId', 'name username avatarUrl').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
+  if (!post) throw new HttpError(404, 'Post not found.');
+  return ok(res, post);
 }));
 router.delete('/drafts/:id', asyncHandler(async (req: AuthRequest, res) => {
   const result = await Post.deleteOne({_id: req.params.id, authorId: req.userId, status: 'draft'});
@@ -113,7 +118,7 @@ router.put('/:id/reaction', asyncHandler(async (req: AuthRequest, res) => {
   const post = await Post.findById(req.params.id); if (!post) throw new HttpError(404, 'Post not found.');
   await Reaction.findOneAndUpdate({postId: post._id, userId: req.userId}, {type}, {upsert: true});
   post.reactionCount = await Reaction.countDocuments({postId: post._id}); await post.save();
-  await notify(post.authorId, req.userId, 'reaction', `reacted ${type.toLowerCase()} to your post`);
+  await notify(post.authorId, req.userId, 'reaction', `reacted ${type.toLowerCase()} to your post`, 'post', String(post._id));
   return ok(res, {reaction: type, count: post.reactionCount});
 }));
 router.delete('/:id/reaction', asyncHandler(async (req: AuthRequest, res) => {
@@ -139,11 +144,11 @@ router.post('/:id/save', asyncHandler(async (req: AuthRequest, res) => {
   return ok(res,{saved:true});
 }));
 router.delete('/:id/save', asyncHandler(async (req: AuthRequest, res) => { await SavedPost.deleteOne({userId:req.userId,postId:req.params.id}); return ok(res,{saved:false}); }));
-router.post('/:id/share', asyncHandler(async (req: AuthRequest, res) => { const post=await Post.findById(req.params.id); if(!post) throw new HttpError(404,'Post not found.'); post.shareCount+=1; await post.save(); await notify(post.authorId,req.userId,'share','shared your post'); return ok(res,{shareCount:post.shareCount}); }));
+router.post('/:id/share', asyncHandler(async (req: AuthRequest, res) => { const post=await Post.findById(req.params.id); if(!post) throw new HttpError(404,'Post not found.'); post.shareCount+=1; await post.save(); await notify(post.authorId,req.userId,'share','shared your post','post',String(post._id)); return ok(res,{shareCount:post.shareCount}); }));
 router.post('/:id/comments', asyncHandler(async (req: AuthRequest, res) => {
   const body = z.object({body: z.string().trim().min(1).max(1000), parentId: z.string().optional()}).parse(req.body);
   const post = await Post.findById(req.params.id); if (!post) throw new HttpError(404, 'Post not found.'); if (post.commentsDisabled) throw new HttpError(403, 'Comments are disabled for this post.');
-  const comment = await Comment.create({postId: post._id, authorId: req.userId, ...body}); post.commentCount += 1; await post.save(); await notify(post.authorId, req.userId, 'comment', 'commented on your post');
+  const comment = await Comment.create({postId: post._id, authorId: req.userId, ...body}); post.commentCount += 1; await post.save(); await notify(post.authorId, req.userId, 'comment', 'commented on your post', 'post', String(post._id));
   return ok(res, comment, 201);
 }));
 router.get('/:id/comments', asyncHandler(async (req, res) => ok(res, await Comment.find({postId: req.params.id}).sort({createdAt: -1}).limit(50).populate('authorId', 'name username avatarUrl'))));

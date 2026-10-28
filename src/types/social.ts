@@ -19,6 +19,13 @@ export type Post = {
   viewerSaved?: boolean;
   pinned?: boolean;
   media?: { url: string; type: 'image' | 'video'; thumbnailUrl?: string }[];
+  repostOf?: {
+    id: string;
+    author: Post['author'];
+    body: string;
+    createdAt: string;
+    media?: { url: string; type: 'image' | 'video'; thumbnailUrl?: string }[];
+  };
 };
 
 export type AppUser = {

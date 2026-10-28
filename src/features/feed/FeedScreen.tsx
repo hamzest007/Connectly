@@ -2,6 +2,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   Modal,
@@ -9,6 +10,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import Video from 'react-native-video';
@@ -42,6 +44,7 @@ type ApiPost = {
   viewerReaction?: Post['viewerReaction'] | null;
   viewerSaved?: boolean;
   media?: Post['media'];
+  repostOf?: { _id: string; body: string; createdAt: string; media?: Post['media']; authorId: { _id: string; name: string; username: string; avatarUrl?: string } | null } | null;
   authorId: {
     _id: string;
     name: string;
@@ -67,15 +70,25 @@ const modes: { key: FeedMode; label: string }[] = [
 
 export function FeedScreen({
   onCreatePost,
+  onOpenSearch,
+  announcement,
+  maintenanceMode,
   accessToken,
   refreshKey,
+  focusPostId,
+  onFocusHandled,
   user,
   onOpenProfile,
   initialMode = 'for-you',
 }: {
   onCreatePost: () => void;
+  onOpenSearch?: () => void;
+  announcement?: string;
+  maintenanceMode?: boolean;
   accessToken: string;
   refreshKey: number;
+  focusPostId?: string;
+  onFocusHandled?: () => void;
   user: { id: string; name: string; avatarUrl?: string };
   onOpenProfile?: (target: {
     id?: string;
@@ -92,7 +105,9 @@ export function FeedScreen({
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState('');
   const [selectedStory, setSelectedStory] = React.useState<Story | null>(null);
+  const [selectedStoryIndex, setSelectedStoryIndex] = React.useState(0);
   const [videoPaused, setVideoPaused] = React.useState(false);
+  const storyProgress = React.useRef(new Animated.Value(0)).current;
   const initials = user.name
     .split(' ')
     .map(part => part[0])
@@ -105,6 +120,8 @@ export function FeedScreen({
       username: 'member',
       avatarUrl: undefined,
     };
+    const repost = item.repostOf;
+    const repostAuthor = repost?.authorId;
     return {
       id: item._id,
       body: item.body,
@@ -128,6 +145,13 @@ export function FeedScreen({
           .slice(0, 2),
         accent: colors.blue,
       },
+      repostOf: repost && repostAuthor ? {
+        id: repost._id,
+        body: repost.body,
+        createdAt: new Date(repost.createdAt).toLocaleDateString(),
+        media: repost.media,
+        author: {id: repostAuthor._id, name: repostAuthor.name, username: repostAuthor.username, avatarUrl: repostAuthor.avatarUrl, initials: repostAuthor.name.split(' ').map(part => part[0]).join('').slice(0, 2), accent: colors.blue},
+      } : undefined,
     };
   };
   const load = React.useCallback(
@@ -153,6 +177,13 @@ export function FeedScreen({
           setCursor(null);
           return;
         }
+        if (reset && focusPostId) {
+          const focused = await apiRequest<ApiPost>(`/posts/${focusPostId}`, {}, accessToken);
+          setPosts([mapPost(focused)]);
+          setCursor(null);
+          onFocusHandled?.();
+          return;
+        }
         const query = `/posts?feed=${mode}&limit=12${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''
           }`;
         const result = await apiRequest<{
@@ -172,7 +203,7 @@ export function FeedScreen({
         setLoadingMore(false);
       }
     },
-    [accessToken, mode, cursor],
+    [accessToken, mode, cursor, focusPostId, onFocusHandled],
   );
   React.useEffect(() => {
     setCursor(null);
@@ -183,6 +214,39 @@ export function FeedScreen({
       setVideoPaused(false);
     }
   }, [selectedStory]);
+  const closeStory = React.useCallback(() => {
+    setSelectedStory(null);
+    setSelectedStoryIndex(0);
+    setVideoPaused(true);
+  }, []);
+  const openStory = React.useCallback((index: number) => {
+    const story = stories[index];
+    if (!story) return;
+    setSelectedStoryIndex(index);
+    setSelectedStory(story);
+    setVideoPaused(false);
+    void apiRequest(`/stories/${story._id}/view`, {method: 'POST'}, accessToken).catch(() => undefined);
+  }, [accessToken, stories]);
+  React.useEffect(() => {
+    if (!selectedStory) return;
+    const timer = setTimeout(() => {
+      const nextIndex = selectedStoryIndex + 1;
+      if (nextIndex < stories.length) openStory(nextIndex);
+      else closeStory();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [closeStory, openStory, selectedStory, selectedStoryIndex, stories.length]);
+  React.useEffect(() => {
+    if (!selectedStory) return;
+    storyProgress.setValue(0);
+    const animation = Animated.timing(storyProgress, {
+      toValue: 1,
+      duration: 3000,
+      useNativeDriver: false,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [selectedStory, selectedStoryIndex, storyProgress]);
   const selectMode = (next: FeedMode) => {
     if (next !== mode) {
       setPosts([]);
@@ -208,21 +272,29 @@ export function FeedScreen({
           <View style={styles.onlineDot} />
         </Pressable>
       </View>
-      <View style={styles.hero}>
-        <View>
-          <Text style={styles.heroTitle}>
-            {mode === 'saved' ? 'Saved moments' : 'Your daily feed'}
-          </Text>
-          <Text style={styles.heroSubtitle}>
-            {mode === 'saved'
-              ? 'Everything you bookmarked in one place'
-              : 'Ideas, people and updates worth your time'}
-          </Text>
+      <Pressable style={styles.homeSearch} onPress={onOpenSearch}>
+        <Text style={styles.homeSearchIcon}>⌕</Text>
+        <TextInput
+          editable={false}
+          pointerEvents="none"
+          placeholder="Search people, posts or hashtags"
+          placeholderTextColor={colors.muted}
+          style={styles.homeSearchInput}
+        />
+      </Pressable>
+      {announcement || maintenanceMode ? (
+        <View style={styles.platformNotice}>
+          <Text style={styles.platformNoticeIcon}>{maintenanceMode ? '⚙' : '✦'}</Text>
+          <View style={styles.platformNoticeCopy}>
+            <Text style={styles.platformNoticeTitle}>
+              {maintenanceMode ? 'Platform notice' : 'Connectly update'}
+            </Text>
+            <Text style={styles.platformNoticeText}>
+              {announcement || 'Some features may be temporarily limited while we improve Connectly.'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.heroMark}>
-          <Text style={styles.heroMarkText}>✦</Text>
-        </View>
-      </View>
+      ) : null}
       <View style={styles.storyCard}>
         <View style={styles.storyCardHeader}>
           <Text style={[styles.sectionTitle, styles.storyCardTitle]}>Stories</Text>
@@ -237,7 +309,7 @@ export function FeedScreen({
             data={stories}
             keyExtractor={item => item._id}
             contentContainerStyle={styles.storyList}
-            renderItem={({ item }) => {
+            renderItem={({ item, index }) => {
               const author = item.authorId ?? {
                 name: 'Member',
                 username: 'member',
@@ -246,15 +318,7 @@ export function FeedScreen({
               return (
                 <Pressable
                   style={styles.storyItem}
-                  onPress={() => {
-                    setVideoPaused(false);
-                    setSelectedStory(item);
-                    void apiRequest(
-                      `/stories/${item._id}/view`,
-                      { method: 'POST' },
-                      accessToken,
-                    ).catch(() => undefined);
-                  }}
+                  onPress={() => openStory(index)}
                 >
                   <View style={styles.storyRing}>
                     <Avatar
@@ -300,23 +364,6 @@ export function FeedScreen({
           <Text style={styles.composerAddText}>＋</Text>
         </View>
       </Pressable>
-      <View style={styles.quickActions}>
-        {[
-          ['▣', 'Photo'],
-          ['▶', 'Video'],
-          ['✦', 'Feeling'],
-          ['⌖', 'Check in'],
-        ].map(([icon, label]) => (
-          <Pressable
-            key={label}
-            onPress={onCreatePost}
-            style={styles.quickAction}
-          >
-            <Text style={styles.quickIcon}>{icon}</Text>
-            <Text style={styles.quickLabel}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
       <View style={styles.feedHeading}>
         <View>
           <Text style={styles.sectionTitle}>
@@ -403,6 +450,7 @@ export function FeedScreen({
                 );
             }}
             onEdited={() => void load(true)}
+            onReposted={() => void load(true)}
           />
         )}
         ListFooterComponent={
@@ -449,14 +497,23 @@ export function FeedScreen({
         transparent
         animationType="slide"
         onRequestClose={() => {
-          setSelectedStory(null);
-          setVideoPaused(true);
+          closeStory();
         }}
       >
         <View style={styles.storyViewer}>
           {/* Progress Bar */}
           <View style={styles.storyProgress}>
-            <View style={styles.storyProgressFill} />
+            <Animated.View
+              style={[
+                styles.storyProgressFill,
+                {
+                  width: storyProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0%', '100%'],
+                  }),
+                },
+              ]}
+            />
           </View>
 
           {/* Header */}
@@ -482,8 +539,7 @@ export function FeedScreen({
             </View>
             <Pressable
               onPress={() => {
-                setSelectedStory(null);
-                setVideoPaused(true);
+                closeStory();
               }}
               style={styles.storyClose}
             >
@@ -516,6 +572,7 @@ export function FeedScreen({
               />
             ) : (
               <View style={styles.storyTextContainer}>
+                <Text style={styles.storyTextType}>TEXT STORY</Text>
                 <Text style={styles.storyText}>{selectedStory?.body}</Text>
               </View>
             )}
@@ -523,11 +580,15 @@ export function FeedScreen({
 
           {/* Swipe Indicators */}
           <View style={styles.storyIndicators}>
-            <View style={styles.storyIndicator} />
-            <View
-              style={[styles.storyIndicator, styles.storyIndicatorActive]}
-            />
-            <View style={styles.storyIndicator} />
+            {stories.map((story, index) => (
+              <View
+                key={story._id}
+                style={[
+                  styles.storyIndicator,
+                  index === selectedStoryIndex && styles.storyIndicatorActive,
+                ]}
+              />
+            ))}
           </View>
         </View>
       </Modal>
@@ -545,6 +606,33 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginBottom: spacing.xl,
   },
+  homeSearch: {
+    height: 48,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  homeSearchIcon: { fontSize: 23, color: colors.blue, marginRight: spacing.sm },
+  homeSearchInput: { flex: 1, color: colors.ink, fontSize: 14, padding: 0 },
+  platformNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.blueSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lavender,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  platformNoticeIcon: { color: colors.blue, fontSize: 18, marginRight: spacing.sm },
+  platformNoticeCopy: { flex: 1 },
+  platformNoticeTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  platformNoticeText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 2 },
   kicker: {
     fontSize: 11,
     letterSpacing: 2.5,
@@ -819,9 +907,9 @@ Object.assign(styles, {
     zIndex: 10,
   },
   storyProgressFill: {
-    width: '70%',
+    width: '0%',
     height: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.blue,
   },
   storyHeader: {
     position: 'absolute',
@@ -877,12 +965,27 @@ Object.assign(styles, {
     height: '100%',
   },
   storyTextContainer: {
-    width: '90%',
+    width: '88%',
+    minHeight: 280,
     padding: spacing.xxl,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    borderRadius: radius.xl,
-    borderWidth: 2,
-    borderColor: 'rgba(99, 102, 241, 0.5)',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    shadowOffset: {width: 0, height: 12},
+    elevation: 12,
+  },
+  storyTextType: {
+    color: 'rgba(255, 255, 255, 0.72)',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
   },
   storyText: {
     fontSize: 32,

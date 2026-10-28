@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,6 +38,7 @@ export function PostCard({
   initialSaved,
   onSaved,
   onEdited,
+  onReposted,
 }: {
   post: Post;
   accessToken: string;
@@ -49,6 +52,7 @@ export function PostCard({
   initialSaved?: boolean;
   onSaved?: (id: string, saved: boolean) => void;
   onEdited?: (id: string) => void;
+  onReposted?: () => void;
 }) {
   const [liked, setLiked] = useState(Boolean(post.viewerReaction));
   const [count, setCount] = useState(post.reactions);
@@ -212,7 +216,32 @@ export function PostCard({
         accessToken,
       );
       setShowMenu(false);
+      onReposted?.();
     } catch {}
+  };
+  const sharePostLink = async () => {
+    try {
+      const result = await apiRequest<{url: string}>(
+        `/posts/${post.id}/share-link`,
+        {},
+        accessToken,
+      );
+      setShowMenu(false);
+      await Share.share({message: result.url});
+    } catch {}
+  };
+  const reportPost = async () => {
+    try {
+      await apiRequest(
+        '/reports',
+        {method: 'POST', body: JSON.stringify({targetType: 'post', targetId: post.id, reason: 'Inappropriate or abusive content'})},
+        accessToken,
+      );
+      setShowMenu(false);
+      Alert.alert('Report submitted', 'Thanks for helping keep Connectly safe.');
+    } catch {
+      Alert.alert('Unable to report', 'Please try again later.');
+    }
   };
   const archive = async () => {
     try {
@@ -320,6 +349,17 @@ export function PostCard({
                 Snooze this person for 30 days
               </Text>
             </Pressable>
+            <Pressable onPress={() => { void toggleSave(); setShowMenu(false); }}>
+              <Text style={styles.menuItem}>{saved ? 'Remove from saved' : 'Save post'}</Text>
+            </Pressable>
+            <Pressable onPress={() => void sharePostLink()}>
+              <Text style={styles.menuItem}>Share post link</Text>
+            </Pressable>
+            {!canDelete ? (
+              <Pressable onPress={() => void reportPost()}>
+                <Text style={[styles.menuItem, styles.reportItem]}>Report post</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
         {pinned ? (
@@ -327,7 +367,23 @@ export function PostCard({
             <Text style={styles.pinnedText}>✦ Pinned post</Text>
           </View>
         ) : null}
-        <Text style={styles.body}>{post.body}</Text>
+        {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
+        {post.repostOf ? (
+          <View style={styles.repost}>
+            <Text style={styles.repostLabel}>↻ Reposted from @{post.repostOf.author.username}</Text>
+            <View style={styles.repostContent}>
+              <View style={styles.repostHeader}>
+                <Avatar initials={post.repostOf.author.initials} color={post.repostOf.author.accent} avatarUrl={post.repostOf.author.avatarUrl} size={32} />
+                <View style={styles.repostAuthor}>
+                  <Text style={styles.repostName}>{post.repostOf.author.name}</Text>
+                  <Text style={styles.repostMeta}>@{post.repostOf.author.username} · {post.repostOf.createdAt}</Text>
+                </View>
+              </View>
+              {post.repostOf.body ? <Text style={styles.repostBody}>{post.repostOf.body}</Text> : null}
+              {post.repostOf.media?.length ? <Image source={{uri: post.repostOf.media[0].url}} style={styles.repostImage} /> : null}
+            </View>
+          </View>
+        ) : null}
         {post.media?.length ? (
           <View style={styles.mediaGrid}>
             {post.media.slice(0, 4).map((media, index) => (
@@ -638,6 +694,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     paddingVertical: spacing.sm,
   },
+  reportItem: { color: colors.danger },
   deleteItem: { color: colors.danger },
   pinned: {
     backgroundColor: colors.lavender,
@@ -678,6 +735,15 @@ const styles = StyleSheet.create({
     marginVertical: spacing.lg,
     letterSpacing: 0,
   },
+  repost: { marginBottom: spacing.lg },
+  repostLabel: { color: colors.muted, fontSize: 12, fontWeight: '700', marginBottom: spacing.xs },
+  repostContent: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md },
+  repostHeader: { flexDirection: 'row', alignItems: 'center' },
+  repostAuthor: { marginLeft: spacing.sm },
+  repostName: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  repostMeta: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  repostBody: { color: colors.ink, fontSize: 14, lineHeight: 20, marginTop: spacing.sm },
+  repostImage: { width: '100%', height: 230, borderRadius: radius.md, marginTop: spacing.sm },
   mediaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

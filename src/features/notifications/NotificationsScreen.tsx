@@ -17,9 +17,11 @@ type Notice = {
   message: string;
   createdAt: string;
   readAt?: string | null;
+  entityType?: string;
+  entityId?: string;
   actorId?: { name: string; username?: string; avatarUrl?: string };
 };
-export function NotificationsScreen({ accessToken }: { accessToken: string }) {
+export function NotificationsScreen({ accessToken, onOpenEntity }: { accessToken: string; onOpenEntity?: (item: Notice) => void }) {
   const [items, setItems] = React.useState<Notice[]>([]);
   const [loading, setLoading] = React.useState(true);
   const load = React.useCallback(() => {
@@ -47,7 +49,7 @@ export function NotificationsScreen({ accessToken }: { accessToken: string }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>YOUR COMMUNITY</Text>
-          <Text style={styles.title}>Alerts</Text>
+          <Text style={styles.title}>Notifications</Text>
         </View>
         <View style={styles.bell}>
           <Text style={styles.bellIcon}>♡</Text>
@@ -111,15 +113,10 @@ export function NotificationsScreen({ accessToken }: { accessToken: string }) {
                 `/notifications/${item._id}/read`,
                 { method: 'PATCH' },
                 accessToken,
-              ).then(() =>
-                setItems(current =>
-                  current.map(value =>
-                    value._id === item._id
-                      ? { ...value, readAt: new Date().toISOString() }
-                      : value,
-                  ),
-                ),
-              )
+              ).then(() => {
+                setItems(current => current.map(value => value._id === item._id ? {...value, readAt: new Date().toISOString()} : value));
+                onOpenEntity?.(item);
+              })
             }
           >
             <Avatar
