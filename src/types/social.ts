@@ -18,11 +18,6 @@ export type Post = {
   viewerReaction?: Reaction;
   viewerSaved?: boolean;
   pinned?: boolean;
-  group?: {
-    id: string;
-    name: string;
-    memberCount: number;
-  };
   media?: { url: string; type: 'image' | 'video'; thumbnailUrl?: string }[];
   repostOf?: {
     id: string;

@@ -14,6 +14,7 @@ import { apiRequest } from '../../services/api/client';
 
 type Notice = {
   _id: string;
+  type?: string;
   message: string;
   createdAt: string;
   readAt?: string | null;

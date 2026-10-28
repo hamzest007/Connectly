@@ -40,7 +40,6 @@ type ApiPost = {
   reactionCount: number;
   commentCount: number;
   shareCount: number;
-  groupId?: { _id: string; name: string; memberCount: number } | string | null;
   pinned?: boolean;
   viewerReaction?: Post['viewerReaction'] | null;
   viewerSaved?: boolean;
@@ -72,11 +71,13 @@ const modes: { key: FeedMode; label: string }[] = [
 export function FeedScreen({
   onCreatePost,
   onOpenSearch,
+  onOpenMessages,
   announcement,
   maintenanceMode,
   accessToken,
   refreshKey,
   focusPostId,
+  focusComments = false,
   onFocusHandled,
   user,
   onOpenProfile,
@@ -84,11 +85,13 @@ export function FeedScreen({
 }: {
   onCreatePost: () => void;
   onOpenSearch?: () => void;
+  onOpenMessages?: () => void;
   announcement?: string;
   maintenanceMode?: boolean;
   accessToken: string;
   refreshKey: number;
   focusPostId?: string;
+  focusComments?: boolean;
   onFocusHandled?: () => void;
   user: { id: string; name: string; avatarUrl?: string };
   onOpenProfile?: (target: {
@@ -109,6 +112,7 @@ export function FeedScreen({
   const [selectedStoryIndex, setSelectedStoryIndex] = React.useState(0);
   const [videoPaused, setVideoPaused] = React.useState(false);
   const storyProgress = React.useRef(new Animated.Value(0)).current;
+  const suppressNextFeedLoad = React.useRef(false);
   const initials = user.name
     .split(' ')
     .map(part => part[0])
@@ -130,7 +134,6 @@ export function FeedScreen({
       reactions: item.reactionCount,
       comments: item.commentCount,
       shares: item.shareCount,
-      group: item.groupId && typeof item.groupId !== 'string' ? {id: item.groupId._id, name: item.groupId.name, memberCount: item.groupId.memberCount} : undefined,
       pinned: item.pinned,
       viewerReaction: item.viewerReaction ?? undefined,
       viewerSaved: item.viewerSaved,
@@ -182,8 +185,13 @@ export function FeedScreen({
         if (reset && focusPostId) {
           const focused = await apiRequest<ApiPost>(`/posts/${focusPostId}`, {}, accessToken);
           setPosts([mapPost(focused)]);
+          suppressNextFeedLoad.current = true;
           setCursor(null);
           onFocusHandled?.();
+          return;
+        }
+        if (reset && !focusPostId && suppressNextFeedLoad.current) {
+          suppressNextFeedLoad.current = false;
           return;
         }
         const query = `/posts?feed=${mode}&limit=12${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''
@@ -259,20 +267,25 @@ export function FeedScreen({
     <View>
       <View style={styles.topBar}>
         <View>
-          <Text style={styles.kicker}>CONNECTLY</Text>
+          <Text style={styles.kicker}>YOUR SPACE</Text>
           <Text style={styles.greeting}>
             Good morning, {user.name.split(' ')[0]}
           </Text>
         </View>
-        <Pressable
-          onPress={() =>
-            onOpenProfile?.({ id: user.id, name: user.name, username: '' })
-          }
-          style={styles.profileButton}
-        >
-          <Avatar initials={initials} avatarUrl={user.avatarUrl} size={42} />
-          <View style={styles.onlineDot} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={onOpenMessages} style={styles.chatButton} accessibilityLabel="Open messages">
+            <Text style={styles.chatIcon}>✉</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              onOpenProfile?.({ id: user.id, name: user.name, username: '' })
+            }
+            style={styles.profileButton}
+          >
+            <Avatar initials={initials} avatarUrl={user.avatarUrl} size={42} />
+            <View style={styles.onlineDot} />
+          </Pressable>
+        </View>
       </View>
       <Pressable style={styles.homeSearch} onPress={onOpenSearch}>
         <Text style={styles.homeSearchIcon}>⌕</Text>
@@ -437,6 +450,7 @@ export function FeedScreen({
             accessToken={accessToken}
             canDelete={item.author.id === user.id}
             initialSaved={mode === 'saved' || item.viewerSaved}
+            initialShowComments={focusComments && item.id === focusPostId}
             onOpenProfile={onOpenProfile}
             onHidden={id =>
               setPosts(current => current.filter(post => post.id !== id))
@@ -600,24 +614,23 @@ export function FeedScreen({
 
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: spacing.lg, paddingBottom: 120 },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 120 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.xs,
-    marginBottom: spacing.xl,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
   },
   homeSearch: {
-    height: 48,
+    height: 52,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
   },
   homeSearchIcon: { fontSize: 23, color: colors.blue, marginRight: spacing.sm },
   homeSearchInput: { flex: 1, color: colors.ink, fontSize: 14, padding: 0 },
@@ -649,6 +662,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   profileButton: { position: 'relative' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  chatButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadow },
+  chatIcon: { color: colors.blue, fontSize: 20, fontWeight: '900' },
   onlineDot: {
     position: 'absolute',
     right: -1,
@@ -690,16 +706,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroMarkText: { fontSize: 28, color: '#fff' },
-  storyCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    marginTop: spacing.lg,
-    borderWidth: 0,
-    ...shadowLarge,
-    zIndex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-  },
+  storyCard: { marginTop: spacing.sm, marginBottom: spacing.md, zIndex: 1 },
   storyCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -707,14 +714,14 @@ const styles = StyleSheet.create({
   },
   storyCardTitle: {
     marginVertical: 0,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '900',
     color: colors.ink,
     letterSpacing: -0.5,
-    marginVertical: spacing.lg,
+    marginVertical: spacing.md,
   },
   storyHint: {
     fontSize: 12,
@@ -722,12 +729,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   storyItem: {
-    width: 64,
+    width: 70,
     alignItems: 'center',
-    marginRight: spacing.md,
+    marginRight: spacing.sm,
   },
   storyRing: {
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: colors.primary,
     borderRadius: 30,
     padding: 2,
@@ -737,11 +744,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontWeight: '600',
     marginTop: 6,
-    maxWidth: 64,
+    maxWidth: 70,
     textAlign: 'center',
   },
   storyList: {
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 0,
   },
   emptyStory: {
     flexDirection: 'row',
@@ -771,34 +778,35 @@ const styles = StyleSheet.create({
   },
   composer: {
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
+    borderRadius: radius.lg,
+    padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.lg,
-    borderWidth: 0,
-    ...shadowLarge,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow,
   },
   composerCopy: { flex: 1, marginLeft: spacing.md },
   composerTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
     color: colors.ink,
   },
   composerHint: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.muted,
     marginTop: 2,
   },
   composerAdd: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.lavender,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  composerAddText: { fontSize: 26, color: colors.primary },
+  composerAddText: { fontSize: 23, color: colors.primary },
   quickActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -817,11 +825,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.xxl,
-    marginBottom: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   feedSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.muted,
     marginTop: 3,
     fontWeight: '500',
@@ -847,12 +855,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  modeRow: { paddingBottom: spacing.md },
+  modeRow: { paddingBottom: spacing.sm },
   modeChip: {
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
     marginRight: spacing.sm,
     borderWidth: 0,
   },
@@ -860,8 +868,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   modeText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '800',
     color: colors.muted,
   },
   modeTextActive: {

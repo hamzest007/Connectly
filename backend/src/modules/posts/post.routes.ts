@@ -21,6 +21,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit ?? 12), 1), 50);
   const feed = z.enum(['for-you','following','friends','latest','trending','reels']).catch('for-you').parse(String(req.query.feed ?? 'for-you'));
   const hidden = await HiddenPost.find({userId:req.userId}).distinct('postId');
+  const feedbackHidden = await RecommendationFeedback.find({userId:req.userId,type:'not-interested'}).distinct('postId');
   const blocked = await Block.find({blockerId:req.userId}).distinct('blockedId');
   const snoozed = await SnoozedUser.find({userId:req.userId,until:{$gt:new Date()}}).distinct('snoozedUserId');
   const authorIds = [req.userId];
@@ -29,7 +30,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
     const friendships = await Friendship.find({$or:[{requesterId:req.userId,status:'accepted'},{recipientId:req.userId,status:'accepted'}]});
     friendships.forEach(item => authorIds.push(String(item.requesterId) === req.userId ? String(item.recipientId) : String(item.requesterId)));
   }
-  const query: any = {_id: {$nin: hidden}, archived: {$ne: true}, $and: [{$or: [{status: 'published'}, {status: {$exists: false}}, {status: 'scheduled', scheduledFor: {$lte: new Date()}}]}, {$or: [{scheduledFor: {$exists: false}}, {scheduledFor: null}, {scheduledFor: {$lte: new Date()}}]}]};
+  const query: any = {_id: {$nin: [...hidden, ...feedbackHidden]}, archived: {$ne: true}, $and: [{$or: [{status: 'published'}, {status: {$exists: false}}, {status: 'scheduled', scheduledFor: {$lte: new Date()}}]}, {$or: [{scheduledFor: {$exists: false}}, {scheduledFor: null}, {scheduledFor: {$lte: new Date()}}]}]};
   if (feed === 'reels') query.isReel = true;
   const visibleAuthors = authorIds.filter(id => !snoozed.map(String).includes(String(id)) && !blocked.map(String).includes(String(id)));
   const groupIds = await GroupMember.find({userId:req.userId,status:'active'}).distinct('groupId');
@@ -45,7 +46,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};
   const sort = feed === 'trending' ? {reactionCount:-1, commentCount:-1, shareCount:-1, createdAt:-1} : {createdAt:-1};
-  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate('groupId', 'name description memberCount visibility').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
+  const posts = await Post.find(query).sort(sort as any).limit(limit).populate('authorId', 'name username avatarUrl').populate({path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}});
   const reactions = await Reaction.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId type');
   const savedPosts = await SavedPost.find({userId:req.userId,postId:{$in:posts.map(post=>post._id)}}).select('postId');
   const reactionByPost = new Map(reactions.map(reaction=>[String(reaction.postId),reaction.type]));

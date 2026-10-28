@@ -50,6 +50,7 @@ export function ConnectlyApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [feedMode, setFeedMode] = useState<'for-you' | 'saved'>('for-you');
   const [focusPostId, setFocusPostId] = useState<string | undefined>();
+  const [focusComments, setFocusComments] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [screen, setScreen] = useState<
     'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'settings' | 'search' | 'friend-requests'
@@ -261,7 +262,7 @@ export function ConnectlyApp() {
     return <SafeAreaView style={styles.app} edges={['top', 'bottom']}><FriendRequestsScreen accessToken={session.accessToken} onBack={() => {setScreen('main');setTab('friends');}} onOpenProfile={target => openProfile(target, 'friends')} /></SafeAreaView>;
   const content =
     screen === 'messages' ? (
-      <MessagesScreen accessToken={session.accessToken} />
+      <MessagesScreen accessToken={session.accessToken} currentUserId={session.user.id} onBack={() => setScreen('main')} />
     ) : screen === 'profile' ? (
       <ProfileScreen
         user={session.user}
@@ -298,6 +299,7 @@ export function ConnectlyApp() {
         onOpenEntity={item => {
           if (item.entityType === 'post' && item.entityId) {
             setFocusPostId(item.entityId);
+            setFocusComments(item.type === 'comment');
             setFeedMode('for-you');
             setTab('home');
             setScreen('main');
@@ -338,9 +340,14 @@ export function ConnectlyApp() {
         accessToken={session.accessToken}
         refreshKey={refreshKey}
         focusPostId={focusPostId}
-        onFocusHandled={() => setFocusPostId(undefined)}
+        focusComments={focusComments}
+        onFocusHandled={() => {
+          setFocusPostId(undefined);
+          setFocusComments(false);
+        }}
         onCreatePost={() => setTab('create')}
         onOpenSearch={() => setScreen('search')}
+        onOpenMessages={() => setScreen('messages')}
         announcement={platformConfig?.announcement}
         maintenanceMode={Boolean(platformConfig?.flags?.maintenanceMode)}
         onOpenProfile={target => openProfile(target, 'home')}

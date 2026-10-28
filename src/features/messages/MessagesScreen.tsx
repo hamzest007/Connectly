@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -23,22 +24,27 @@ type Conversation = {
 type Message = {
   _id: string;
   body: string;
-  senderId: { name: string; username: string; avatarUrl?: string };
+  senderId: { _id: string; name: string; username: string; avatarUrl?: string };
   createdAt: string;
   deletedAt?: string | null;
 };
 export function MessagesScreen({
   accessToken,
   onBack,
+  currentUserId,
 }: {
   accessToken: string;
   onBack?: () => void;
+  currentUserId: string;
 }) {
   const [items, setItems] = React.useState<Conversation[]>([]);
   const [active, setActive] = React.useState<Conversation | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [text, setText] = React.useState('');
   const [loading, setLoading] = React.useState(true);
+  const [newChat, setNewChat] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const [people, setPeople] = React.useState<Array<{_id: string; name: string; username: string; avatarUrl?: string}>>([]);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -52,6 +58,30 @@ export function MessagesScreen({
   React.useEffect(() => {
     void load();
   }, [accessToken, load]);
+  const refreshMessages = React.useCallback(async () => {
+    if (!active) return;
+    try {
+      const result = await apiRequest<{items: Message[]; nextCursor: string | null}>(`/conversations/${active._id}/messages`, {}, accessToken);
+      setMessages(result.items.reverse());
+    } catch {}
+  }, [accessToken, active]);
+  React.useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => void refreshMessages(), 3000);
+    return () => clearInterval(timer);
+  }, [active, refreshMessages]);
+  const findPeople = async () => {
+    if (!search.trim()) return setPeople([]);
+    try { setPeople(await apiRequest(`/users/search?q=${encodeURIComponent(search.trim())}`, {}, accessToken)); } catch { setPeople([]); }
+  };
+  const startChat = async (person: { _id: string; name: string; username: string; avatarUrl?: string }) => {
+    try {
+      const conversation = await apiRequest<Conversation>('/conversations', {method: 'POST', body: JSON.stringify({participantIds: [person._id], type: 'direct'})}, accessToken);
+      setNewChat(false); setSearch(''); setPeople([]); await load(); await open(conversation);
+    } catch (e) {
+      Alert.alert('Friendship required', e instanceof Error ? e.message : 'You must be friends before chatting.');
+    }
+  };
   const open = async (item: Conversation) => {
     setActive(item);
     const result = await apiRequest<{
@@ -92,7 +122,7 @@ export function MessagesScreen({
           data={messages}
           keyExtractor={item => item._id}
           renderItem={({ item }) => (
-            <View style={styles.message}>
+            <View style={[styles.message, item.senderId._id === currentUserId && styles.ownMessage]}>
               <Text style={styles.messageAuthor}>{item.senderId.name}</Text>
               <Text style={styles.messageBody}>
                 {item.deletedAt ? 'Message deleted' : item.body}
@@ -137,7 +167,25 @@ export function MessagesScreen({
             Private conversations, requests and groups.
           </Text>
         </View>
+        <Pressable style={styles.newChatButton} onPress={() => setNewChat(value => !value)}>
+          <Text style={styles.newChatText}>＋ Chat</Text>
+        </Pressable>
       </View>
+      {newChat ? (
+        <View style={styles.newChatPanel}>
+          <View style={styles.searchRow}>
+            <TextInput value={search} onChangeText={setSearch} onSubmitEditing={() => void findPeople()} placeholder="Search by name or username" placeholderTextColor={colors.muted} style={styles.searchInput} />
+            <Pressable onPress={() => void findPeople()}><Text style={styles.searchAction}>Search</Text></Pressable>
+          </View>
+          {people.map(person => (
+            <Pressable key={person._id} style={styles.personResult} onPress={() => void startChat(person)}>
+              <Avatar initials={person.name.split(' ').map(part => part[0]).join('').slice(0, 2)} avatarUrl={person.avatarUrl} size={36} />
+              <View style={styles.copy}><Text style={styles.name}>{person.name}</Text><Text style={styles.meta}>@{person.username}</Text></View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       {loading ? (
         <ActivityIndicator color={colors.blue} style={styles.loader} />
       ) : (
@@ -266,6 +314,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  ownMessage: { alignSelf: 'flex-end', backgroundColor: colors.blueSoft, borderColor: colors.lavender, maxWidth: '86%' },
   messageAuthor: { fontSize: 11, color: colors.blue, fontWeight: '900' },
   messageBody: { fontSize: 14, color: colors.ink, marginTop: 3 },
   messageTime: { fontSize: 9, color: colors.muted, marginTop: 4 },
@@ -289,4 +338,11 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     paddingHorizontal: spacing.sm,
   },
+  newChatButton: { backgroundColor: colors.blue, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  newChatText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  newChatPanel: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, ...shadow },
+  searchRow: { flexDirection: 'row', alignItems: 'center' },
+  searchInput: { flex: 1, height: 42, backgroundColor: colors.canvas, borderRadius: radius.pill, paddingHorizontal: spacing.md, color: colors.ink },
+  searchAction: { color: colors.blue, fontWeight: '900', padding: spacing.sm },
+  personResult: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.borderLight },
 });

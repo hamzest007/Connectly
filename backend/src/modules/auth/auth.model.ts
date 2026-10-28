@@ -4,6 +4,7 @@ const userSchema = new Schema({
   email: {type: String, required: true, unique: true, lowercase: true, trim: true, index: true},
   phone: {type: String, default: '', trim: true, index: true},
   username: {type: String, required: true, unique: true, lowercase: true, trim: true, index: true},
+  accountType: {type: String, enum: ['user', 'page'], default: 'user', index: true},
   name: {type: String, required: true, trim: true, maxlength: 80},
   passwordHash: {type: String, required: true, select: false},
   bio: {type: String, default: '', maxlength: 280},

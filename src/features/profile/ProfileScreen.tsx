@@ -31,11 +31,13 @@ type ProfileData = {
   website?: string;
   location?: string;
   privateAccount?: boolean;
+  accountType?: 'user' | 'page';
   isVerified?: boolean;
   followersCount: number;
   followingCount: number;
   postCount: number;
   isFollowing: boolean;
+  friendStatus?: 'none' | 'pending' | 'accepted' | 'declined';
 };
 type User = {
   id: string;
@@ -143,7 +145,12 @@ export function ProfileScreen({
     if (!profile || followBusy || isSelf) return;
     setFollowBusy(true);
     try {
-      if (profile.isFollowing) {
+      if (profile.accountType !== 'page') {
+        if (profile.friendStatus === 'none' || profile.friendStatus === 'declined') {
+          await apiRequest(`/friends/${profile._id}`, {method: 'POST'}, accessToken);
+          setProfile(current => current ? {...current, friendStatus: 'pending'} : current);
+        }
+      } else if (profile.isFollowing) {
         await apiRequest(
           `/follows/${profile._id}`,
           { method: 'DELETE' },
@@ -416,17 +423,17 @@ export function ProfileScreen({
           <Pressable
             style={[
               styles.followButton,
-              profile.isFollowing && styles.followingButton,
+              ((profile.accountType === 'page' && profile.isFollowing) || (profile.accountType !== 'page' && profile.friendStatus === 'accepted')) && styles.followingButton,
             ]}
             onPress={() => void toggleFollow()}
           >
             <Text
               style={[
                 styles.followText,
-                profile.isFollowing && styles.followingText,
+                ((profile.accountType === 'page' && profile.isFollowing) || (profile.accountType !== 'page' && profile.friendStatus === 'accepted')) && styles.followingText,
               ]}
             >
-              {followBusy ? '…' : profile.isFollowing ? 'Following' : 'Follow'}
+              {followBusy ? '…' : profile.accountType === 'page' ? (profile.isFollowing ? 'Following' : 'Follow Page') : profile.friendStatus === 'accepted' ? 'Friends' : profile.friendStatus === 'pending' ? 'Request sent' : 'Add friend'}
             </Text>
           </Pressable>
         )}

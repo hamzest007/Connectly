@@ -12,7 +12,7 @@ import { Avatar } from '../../components/common/Avatar';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
 import { apiRequest } from '../../services/api/client';
 
-type User = { _id: string; name: string; username: string; avatarUrl?: string };
+type User = { _id: string; name: string; username: string; avatarUrl?: string; accountType?: 'user' | 'page' };
 type FriendRequest = { _id: string; requesterId: User };
 
 export function FriendsScreen({
@@ -222,7 +222,7 @@ export function FriendsScreen({
               </View>
             </Pressable>
             <View style={styles.rowActions}>
-              <Pressable
+              {user.accountType === 'page' ? <Pressable
                 style={[
                   styles.button,
                   following.includes(user._id) && styles.followingButton,
@@ -237,8 +237,8 @@ export function FriendsScreen({
                 >
                   {following.includes(user._id) ? 'Following' : 'Follow'}
                 </Text>
-              </Pressable>
-              <Pressable
+              </Pressable> : null}
+              {user.accountType !== 'page' ? <Pressable
                 style={[
                   styles.friendButton,
                   sentRequests.includes(user._id) && styles.friendPending,
@@ -255,7 +255,7 @@ export function FriendsScreen({
                     ? 'Request sent'
                     : 'Add friend'}
                 </Text>
-              </Pressable>
+              </Pressable> : null}
             </View>
           </View>
         ))
