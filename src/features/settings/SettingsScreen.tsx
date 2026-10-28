@@ -39,6 +39,7 @@ type Props = {
 type MenuItem = [string, string, string];
 
 const tools: MenuItem[] = [
+  ['Friend requests', 'Review and manage people who want to connect', '♧'],
   ['Saved posts', 'Your private collection of bookmarks', '▱'],
   ['Your activity', 'Review likes, comments and account history', '◷'],
   ['Close friends', 'Choose who sees your closer updates', '✦'],
@@ -76,6 +77,7 @@ export function SettingsScreen({
   onLogout,
 }: Props) {
   const actions: Record<string, () => void> = {
+    'Friend requests': onFriends,
     'Saved posts': onSaved,
     Messages: onMessages,
     'Blocked and muted accounts': onBlocked,

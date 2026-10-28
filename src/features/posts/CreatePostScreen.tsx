@@ -147,6 +147,7 @@ export function CreatePostScreen({
               body: text,
               audience: audienceValue,
               media: uploaded,
+              publisherType: user.accountType === 'page' ? 'page' : 'personal',
             }),
           },
           accessToken,

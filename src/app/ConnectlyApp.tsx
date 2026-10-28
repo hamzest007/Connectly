@@ -35,10 +35,10 @@ type Tab =
   | 'menu';
 const tabs: { key: Tab; icon: string; label: string }[] = [
   { key: 'home', icon: '⌂', label: 'Home' },
-  { key: 'reels', icon: '▶', label: 'Reels' },
+  { key: 'reels', icon: '◉', label: 'Reels' },
   { key: 'create', icon: '+', label: 'Create' },
-  { key: 'notifications', icon: '♡', label: 'Notifications' },
-  { key: 'menu', icon: '☰', label: 'Menu' },
+  { key: 'notifications', icon: '♢', label: 'Notifications' },
+  { key: 'menu', icon: '≡', label: 'Menu' },
 ];
 
 export function ConnectlyApp() {
@@ -304,7 +304,9 @@ export function ConnectlyApp() {
         accessToken={session.accessToken}
         profileType={session.user.accountType === 'page' ? 'page' : 'personal'}
         onOpenEntity={item => {
-          if (item.entityType === 'post' && item.entityId) {
+          if (item.entityType === 'friend-request') {
+            setScreen('friend-requests');
+          } else if (item.entityType === 'post' && item.entityId) {
             setFocusPostId(item.entityId);
             setFocusComments(item.type === 'comment');
             setFeedMode('for-you');

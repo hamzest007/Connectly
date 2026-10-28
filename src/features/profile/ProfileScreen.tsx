@@ -34,6 +34,7 @@ type ProfileData = {
   education?: string;
   maritalStatus?: string;
   privateAccount?: boolean;
+  isSelf?: boolean;
   accountType?: 'user' | 'page';
   pageEnabled?: boolean;
   pageName?: string;
@@ -69,6 +70,7 @@ type ProfilePost = {
   authorId: { _id: string; name: string; username: string; avatarUrl?: string };
 };
 type PageDashboard = {page:{name:string;username:string;active:boolean};followers:number;engagement:{posts:number;likes:number;comments:number;shares:number;views:number;reach:number};monetization:{enabled:boolean;tipsEnabled:boolean;subscriptionsEnabled:boolean};followerGrowth:Array<{_id:string;count:number}>;topPosts:Array<{_id:string;body:string;reactionCount:number;commentCount:number;shareCount:number;viewCount:number}>;followerList:Array<{followerId:{name:string;username:string;avatarUrl?:string;accountType?:'user'|'page'}}>};
+type ProfileFriend = {_id:string;name:string;username:string;avatarUrl?:string;accountType?:'user'|'page'};
 
 export function ProfileScreen({
   onSettings,
@@ -85,7 +87,7 @@ export function ProfileScreen({
   profileUser?: { name: string; username: string };
   onAccountUpdated?: (account: {name:string;username:string;avatarUrl?:string}) => void;
 }) {
-  const isSelf = !profileUser;
+  const [isSelf, setIsSelf] = React.useState(!profileUser);
   const [activeUsername, setActiveUsername] = React.useState(profileUser?.username ?? user.username);
   const username = activeUsername;
   const [profile, setProfile] = React.useState<ProfileData | null>(null);
@@ -121,25 +123,35 @@ export function ProfileScreen({
   const [maritalStatus, setMaritalStatus] = React.useState('');
   const [location, setLocation] = React.useState('');
   const [error, setError] = React.useState('');
+  const [friends, setFriends] = React.useState<ProfileFriend[]>([]);
   React.useEffect(() => {
     setActiveUsername(profileUser?.username ?? user.username);
+    setIsSelf(!profileUser);
   }, [profileUser?.username, user.username]);
   const load = React.useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await apiRequest<ProfileData | null>(
+      const basic = await apiRequest<ProfileData | null>(
         isSelf ? '/users/me' : `/users/${encodeURIComponent(username)}`,
         {},
         accessToken,
       );
-      if (!data) throw new Error('This profile is no longer available.');
+      if (!basic) throw new Error('This profile is no longer available.');
+      const data = isSelf ? await apiRequest<ProfileData>(`/users/${encodeURIComponent(basic.username)}`, {}, accessToken) : basic;
       const items = await apiRequest<ProfilePost[]>(
         `/users/${encodeURIComponent(data.username)}/posts`,
         {},
         accessToken,
       );
       setProfile(data);
+      setIsSelf(Boolean(data.isSelf ?? isSelf));
+      const friendItems = await apiRequest<ProfileFriend[]>(
+        `/users/${encodeURIComponent(data.username)}/friends`,
+        {},
+        accessToken,
+      ).catch(() => []);
+      setFriends(friendItems);
       if (isSelf) setActiveUsername(data.username);
       setName(data.name);
       setBio(data.bio ?? '');
@@ -527,7 +539,7 @@ export function ProfileScreen({
       </View>
       {isSelf ? (
         <Pressable style={styles.pageSwitchCard} onPress={() => profile.pageEnabled ? void switchPageMode() : setPageModalVisible(true)} disabled={pageBusy}>
-          <View style={styles.pageSwitchIcon}><Text style={styles.pageSwitchIconText}>▦</Text></View>
+          <View style={styles.pageSwitchIcon}><Avatar initials={initials} avatarUrl={profile.avatarUrl} size={42} /></View>
           <View style={styles.pageSwitchCopy}><Text style={styles.pageSwitchTitle}>{profile.pageEnabled ? (profile.accountType === 'page' ? 'Switch to personal profile' : `Switch to ${profile.pageName || 'your Page'}`) : 'Create a Page'}</Text><Text style={styles.pageSwitchHint}>{profile.pageEnabled ? 'Change your active identity anytime' : 'Build a public presence for your brand or community'}</Text></View>
           <Text style={styles.pageSwitchArrow}>{pageBusy ? '…' : '›'}</Text>
         </Pressable>
@@ -564,7 +576,7 @@ export function ProfileScreen({
       <Text style={styles.bio}>
         {profile.bio || 'A new connection on Connectly.'}
       </Text>
-      {profile.website ? (
+      {(profile.accountType === 'page' ? profile.pageWebsite : profile.website) ? (
         <Text
           style={{
             color: colors.blue,
@@ -573,21 +585,19 @@ export function ProfileScreen({
             marginTop: spacing.xs,
           }}
         >
-          ↗ {profile.website}
+          ↗ {profile.accountType === 'page' ? profile.pageWebsite : profile.website}
         </Text>
       ) : null}
-      {profile.location ? (
+      {(profile.accountType === 'page' ? profile.pageLocation : profile.location) ? (
         <Text
           style={{ color: colors.muted, fontSize: 12, marginTop: spacing.xs }}
         >
-          ⌖ {profile.location}
+          ⌖ {profile.accountType === 'page' ? profile.pageLocation : profile.location}
         </Text>
       ) : null}
-      {(profile.country || profile.education || profile.maritalStatus) ? (
+      {(profile.accountType === 'page' ? (profile.pageCategory || profile.pageCountry || profile.pageEmail || profile.pagePhone) : (profile.country || profile.education || profile.maritalStatus)) ? (
         <View style={styles.detailsCard}>
-          {profile.country ? <Text style={styles.detailItem}>🌐 {profile.country}</Text> : null}
-          {profile.education ? <Text style={styles.detailItem}>🎓 {profile.education}</Text> : null}
-          {profile.maritalStatus ? <Text style={styles.detailItem}>♡ {profile.maritalStatus}</Text> : null}
+          {profile.accountType === 'page' ? <>{profile.pageCategory ? <Text style={styles.detailItem}>✦ {profile.pageCategory}</Text> : null}{profile.pageCountry ? <Text style={styles.detailItem}>🌐 {profile.pageCountry}</Text> : null}{profile.pageEmail ? <Text style={styles.detailItem}>✉ {profile.pageEmail}</Text> : null}{profile.pagePhone ? <Text style={styles.detailItem}>⌕ {profile.pagePhone}</Text> : null}</> : <>{profile.country ? <Text style={styles.detailItem}>🌐 {profile.country}</Text> : null}{profile.education ? <Text style={styles.detailItem}>🎓 {profile.education}</Text> : null}{profile.maritalStatus ? <Text style={styles.detailItem}>♡ {profile.maritalStatus}</Text> : null}</>}
         </View>
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -605,6 +615,12 @@ export function ProfileScreen({
           <Text style={styles.label}>Posts</Text>
         </View>
       </View>
+      {(!profile.privateAccount || isSelf) && profile.accountType !== 'page' ? (
+        <View style={styles.friendsCard}>
+          <View style={styles.friendsHeader}><Text style={styles.friendsTitle}>Friends</Text><Text style={styles.friendsCount}>{friends.length}</Text></View>
+          {friends.length ? <View style={styles.friendsGrid}>{friends.slice(0, 6).map(friend => <View style={styles.friendTile} key={friend._id}><Avatar initials={friend.name.split(' ').map(part => part[0]).join('').slice(0, 2)} avatarUrl={friend.avatarUrl} size={38} /><Text style={styles.friendName} numberOfLines={1}>{friend.name}</Text><Text style={styles.friendUsername} numberOfLines={1}>@{friend.username}</Text></View>)}</View> : <Text style={styles.friendsEmpty}>No friends to show yet.</Text>}
+        </View>
+      ) : null}
       <View
         style={{
           flexDirection: 'row',
@@ -765,7 +781,7 @@ export function ProfileScreen({
           <Text style={styles.dashboardSectionTitle}>Top recent content</Text>
           {(pageDashboard?.topPosts??[]).length ? pageDashboard?.topPosts.map(post=><View style={styles.topPostRow} key={post._id}><Text numberOfLines={1} style={styles.topPostBody}>{post.body||'Media post'}</Text><Text style={styles.topPostStats}>{post.reactionCount} likes · {post.commentCount} comments · {post.viewCount} views</Text></View>) : <Text style={styles.monetizationHint}>Publish content to see performance here.</Text>}
           <Text style={styles.dashboardSectionTitle}>Followers</Text>
-          {(pageDashboard?.followerList??[]).length ? pageDashboard?.followerList.slice(0,10).map(item=><View style={styles.followerRow} key={item.followerId.username}><Avatar initials={item.followerId.name.split(' ').map(part=>part[0]).join('').slice(0,2)} avatarUrl={item.followerId.avatarUrl} size={34}/><View style={styles.followerCopy}><Text style={styles.followerName}>{item.followerId.name}</Text><Text style={styles.followerUsername}>@{item.followerId.username}</Text></View><Text style={styles.followerType}>{item.followerId.accountType==='page'?'Page':'Follower'}</Text></View>) : <Text style={styles.monetizationHint}>Your followers will appear here.</Text>}
+          {(pageDashboard?.followerList??[]).length ? pageDashboard?.followerList.slice(0,10).map(item=><View style={styles.followerRow} key={item.followerId.username}><Avatar initials={item.followerId.name.split(' ').map(part=>part[0]).join('').slice(0,2)} avatarUrl={item.followerId.avatarUrl} size={34}/><View style={styles.followerCopy}><Text style={styles.followerName}>{item.followerId.name}</Text><Text style={styles.followerUsername}>@{item.followerId.username}</Text></View><Text style={styles.followerType}>{item.followerId.accountType==='page'?'Page':'Follower'}</Text></View>) : <Text style={styles.monetizationHint}>0 followers</Text>}
         </View></View>
       </Modal>
       <Modal
@@ -1149,6 +1165,15 @@ const styles = StyleSheet.create({
   },
   bioInput: { minHeight: 92, textAlignVertical: 'top' },
   fieldGrid: { flexDirection: 'row', gap: spacing.sm },
+  friendsCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg, ...shadow },
+  friendsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  friendsTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  friendsCount: { color: colors.blue, fontSize: 14, fontWeight: '900' },
+  friendsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  friendTile: { width: '28%', alignItems: 'center' },
+  friendName: { color: colors.ink, fontSize: 11, fontWeight: '800', marginTop: spacing.xs },
+  friendUsername: { color: colors.muted, fontSize: 9, marginTop: 2 },
+  friendsEmpty: { color: colors.muted, fontSize: 13 },
   fieldHalf: { flex: 1 },
   privacyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.blueSoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
   privacyTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },

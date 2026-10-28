@@ -2,6 +2,7 @@ import {Schema, model} from 'mongoose';
 
 const storySchema = new Schema({
   authorId: {type: Schema.Types.ObjectId, ref: 'User', required: true, index: true},
+  publisherType: {type: String, enum: ['personal', 'page'], default: 'personal', index: true},
   body: {type: String, trim: true, maxlength: 1000, default: ''},
   audience: {type: String, enum: ['public', 'friends', 'close-friends', 'private'], default: 'public'},
   media: [{url: String, type: {type: String, enum: ['image', 'video']}, thumbnailUrl: String}],

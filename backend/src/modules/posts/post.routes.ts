@@ -38,12 +38,13 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const groupIds = await GroupMember.find({userId:req.userId,status:'active'}).distinct('groupId');
   if (feed === 'reels') {
     query.audience = 'public';
+    query.$or = [{authorId:{$ne:req.userId}},{authorId:req.userId,publisherType:activePublisher}];
   } else if (feed === 'friends') {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId,publisherType:activePublisher}];
   } else if (feed === 'following') {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {audience:'friends',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {groupId:{$in:groupIds},audience:'public'}];
   } else {
-    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId,publisherType:activePublisher}];
+    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId,publisherType:activePublisher}];
   }
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};

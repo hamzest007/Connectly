@@ -17,7 +17,7 @@ type Conversation = {
   title: string;
   type: 'direct' | 'group';
   participants: {
-    userId: { name: string; username: string; avatarUrl?: string };
+    userId: { _id: string; name: string; username: string; avatarUrl?: string };
   }[];
   lastMessageAt?: string;
 };
@@ -72,7 +72,7 @@ export function MessagesScreen({
   }, [active, refreshMessages]);
   const findPeople = async () => {
     if (!search.trim()) return setPeople([]);
-    try { setPeople(await apiRequest(`/users/search?q=${encodeURIComponent(search.trim())}`, {}, accessToken)); } catch { setPeople([]); }
+    try { setPeople((await apiRequest<Array<{_id:string; name:string; username:string; avatarUrl?:string}>>(`/users/search?q=${encodeURIComponent(search.trim())}`, {}, accessToken)).filter(person => person._id !== currentUserId)); } catch { setPeople([]); }
   };
   const startChat = async (person: { _id: string; name: string; username: string; avatarUrl?: string }) => {
     try {
@@ -105,6 +105,9 @@ export function MessagesScreen({
     setMessages(current => [...current, result]);
     setText('');
   };
+  const conversationTitle = (item: Conversation) => item.title || item.participants.filter(part => part.userId._id !== currentUserId).map(part => part.userId.name).join(', ') || 'Conversation';
+  const conversationMeta = (item: Conversation) => item.type === 'group' ? 'Group conversation' : item.participants.filter(part => part.userId._id !== currentUserId).map(part => `@${part.userId.username}`).join(', ') || 'Private conversation';
+  const conversationAvatar = (item: Conversation) => item.participants.find(part => part.userId._id !== currentUserId)?.userId.avatarUrl;
   if (active)
     return (
       <View style={styles.page}>
@@ -113,8 +116,7 @@ export function MessagesScreen({
             <Text style={styles.back}>‹</Text>
           </Pressable>
           <Text style={styles.chatTitle}>
-            {active.title ||
-              active.participants.map(item => item.userId.name).join(', ')}
+            {conversationTitle(active)}
           </Text>
         </View>
         <FlatList
@@ -197,25 +199,20 @@ export function MessagesScreen({
             <Pressable style={styles.row} onPress={() => void open(item)}>
               <Avatar
                 initials={(
-                  item.title ||
-                  item.participants[0]?.userId.name ||
-                  'C'
+                  conversationTitle(item) || 'C'
                 )
                   .split(' ')
                   .map(part => part[0])
                   .join('')
                   .slice(0, 2)}
-                avatarUrl={item.participants[0]?.userId.avatarUrl}
+                avatarUrl={conversationAvatar(item)}
               />
               <View style={styles.copy}>
                 <Text style={styles.name}>
-                  {item.title ||
-                    item.participants.map(part => part.userId.name).join(', ')}
+                  {conversationTitle(item)}
                 </Text>
                 <Text style={styles.meta}>
-                  {item.type === 'group'
-                    ? 'Group conversation'
-                    : 'Private conversation'}
+                  {conversationMeta(item)}
                 </Text>
               </View>
               <Text style={styles.chevron}>›</Text>

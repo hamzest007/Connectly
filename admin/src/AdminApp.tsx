@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {Activity, AlertTriangle, BarChart3, CheckCircle2, ChevronRight, FileText, LogOut, Menu, Search, ShieldCheck, Settings2, UserRound, Users, XCircle, BadgeCheck, SlidersHorizontal, MessageCircle} from 'lucide-react';
 import {AdminUser,Report,clearToken,getToken,login,request} from './api';
+import './modern.css';
 
 type View='overview'|'users'|'content'|'groups'|'reports'|'verification'|'analytics'|'configuration'|'audit';
 type Overview={users:number;publishedPosts:number;openReports:number;suspended:number;dailyActiveUsers:number;engagement:{likes:number;comments:number;shares:number;views:number}};
