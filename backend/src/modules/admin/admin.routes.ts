@@ -36,7 +36,7 @@ router.get('/analytics', asyncHandler(async(_req,res)=>{
 
 router.get('/users', asyncHandler(async(req,res)=>{
   const limit=Math.min(Math.max(Number(req.query.limit??25),1),100); const q=String(req.query.q??'').trim(); const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{username:{$regex:q,$options:'i'}},{email:{$regex:q,$options:'i'}}]}:{};
-  const users=await User.find(filter).select('name username email role status isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).limit(limit);
+  const users=await User.find(filter).select('name username email role status accountType privateAccount isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).limit(limit);
   return ok(res,{items:users});
 }));
 
@@ -79,6 +79,14 @@ router.patch('/users/:id/status', asyncHandler(async(req:AuthRequest,res)=>{
 
 router.patch('/users/:id/role', asyncHandler(async(req:AuthRequest,res)=>{
   const data=z.object({role:z.enum(['user','moderator','admin'])}).parse(req.body); const id=String(req.params.id); const user=await User.findByIdAndUpdate(id,{role:data.role},{new:true}).select('name username email role status'); if(!user)throw new HttpError(404,'User not found.'); await audit(req,'change_role','user',id,{role:data.role}); return ok(res,user);
+}));
+
+router.patch('/users/:id/profile-settings', asyncHandler(async(req:AuthRequest,res)=>{
+  const data=z.object({accountType:z.enum(['user','page']).optional(),privateAccount:z.boolean().optional()}).refine(value=>Object.keys(value).length>0,{message:'Provide at least one profile setting.'}).parse(req.body);
+  const user=await User.findByIdAndUpdate(req.params.id,data,{new:true,runValidators:true}).select('name username email role status accountType privateAccount');
+  if(!user)throw new HttpError(404,'User not found.');
+  await audit(req,'update_profile_settings','user',String(user._id),data);
+  return ok(res,user);
 }));
 
 router.get('/reports', asyncHandler(async(req,res)=>{const status=z.enum(['all','open','reviewing','resolved','dismissed']).catch('all').parse(String(req.query.status??'all')); const filter=status==='all'?{}:{status}; const reports=await Report.find(filter).sort({priority:-1,createdAt:1}).limit(100).populate('reporterId','name username email').populate('assignedTo','name username'); return ok(res,reports);}));

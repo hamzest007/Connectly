@@ -14,6 +14,7 @@ import { apiRequest } from '../../services/api/client';
 
 type User = { _id: string; name: string; username: string; avatarUrl?: string; accountType?: 'user' | 'page' };
 type FriendRequest = { _id: string; requesterId: User };
+type SentFriendship = { _id: string; recipientId: User; status: 'pending' | 'accepted' };
 
 export function FriendsScreen({
   accessToken,
@@ -21,14 +22,14 @@ export function FriendsScreen({
   onOpenRequests,
 }: {
   accessToken: string;
-  onOpenProfile?: (user: { name: string; username: string }) => void;
+  onOpenProfile?: (user: { id?: string; name: string; username: string }) => void;
   onOpenRequests?: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<User[]>([]);
   const [following, setFollowing] = useState<string[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
-  const [sentRequests, setSentRequests] = useState<string[]>([]);
+  const [friendStatuses, setFriendStatuses] = useState<Record<string, 'pending' | 'accepted'>>({});
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     void apiRequest<Array<{ followingId: string | { _id: string } }>>(
@@ -51,6 +52,11 @@ export function FriendsScreen({
     void apiRequest<FriendRequest[]>('/friends/requests', {}, accessToken)
       .then(setRequests)
       .catch(() => setRequests([]));
+  }, [accessToken]);
+  useEffect(() => {
+    void apiRequest<SentFriendship[]>('/friends/sent', {}, accessToken)
+      .then(items => setFriendStatuses(Object.fromEntries(items.map(item => [item.recipientId._id, item.status]))))
+      .catch(() => setFriendStatuses({}));
   }, [accessToken]);
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -82,10 +88,10 @@ export function FriendsScreen({
     } catch {}
   };
   const sendFriendRequest = async (id: string) => {
-    if (sentRequests.includes(id)) return;
+    if (friendStatuses[id]) return;
     try {
       await apiRequest(`/friends/${id}`, { method: 'POST' }, accessToken);
-      setSentRequests(items => [...items, id]);
+      setFriendStatuses(items => ({...items, [id]: 'pending'}));
     } catch {}
   };
   const respondToRequest = async (
@@ -205,7 +211,7 @@ export function FriendsScreen({
             <Pressable
               style={styles.personTap}
               onPress={() =>
-                onOpenProfile?.({ name: user.name, username: user.username })
+                onOpenProfile?.({ id: user._id, name: user.name, username: user.username })
               }
             >
               <Avatar
@@ -218,7 +224,7 @@ export function FriendsScreen({
               />
               <View style={styles.info}>
                 <Text style={styles.name}>{user.name}</Text>
-                <Text style={styles.meta}>@{user.username}</Text>
+                <Text style={styles.meta}>@{user.username} · {user.accountType === 'page' ? 'Page' : 'Personal account'}</Text>
               </View>
             </Pressable>
             <View style={styles.rowActions}>
@@ -241,17 +247,19 @@ export function FriendsScreen({
               {user.accountType !== 'page' ? <Pressable
                 style={[
                   styles.friendButton,
-                  sentRequests.includes(user._id) && styles.friendPending,
+                  friendStatuses[user._id] && styles.friendPending,
                 ]}
                 onPress={() => void sendFriendRequest(user._id)}
               >
                 <Text
                   style={[
                     styles.friendText,
-                    sentRequests.includes(user._id) && styles.friendPendingText,
-                  ]}
-                >
-                  {sentRequests.includes(user._id)
+                  friendStatuses[user._id] && styles.friendPendingText,
+                ]}
+              >
+                {friendStatuses[user._id] === 'accepted'
+                    ? 'Friends'
+                    : friendStatuses[user._id] === 'pending'
                     ? 'Request sent'
                     : 'Add friend'}
                 </Text>

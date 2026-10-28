@@ -19,7 +19,7 @@ import {
   shadowLarge,
   spacing,
 } from '../../theme/tokens';
-import { Post } from '../../types/social';
+import { Post, Reaction } from '../../types/social';
 import { apiRequest } from '../../services/api/client';
 import Video from 'react-native-video';
 
@@ -56,7 +56,8 @@ export function PostCard({
   onReposted?: () => void;
   initialShowComments?: boolean;
 }) {
-  const [liked, setLiked] = useState(Boolean(post.viewerReaction));
+  const [selectedReaction, setSelectedReaction] = useState<Reaction | null>(post.viewerReaction ?? null);
+  const liked = Boolean(selectedReaction);
   const [count, setCount] = useState(post.reactions);
   const [commentCount, setCommentCount] = useState(post.comments);
   const [comment, setComment] = useState('');
@@ -69,6 +70,7 @@ export function PostCard({
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [pinned, setPinned] = useState(Boolean(post.pinned));
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editBody, setEditBody] = useState(post.body);
   const [editing, setEditing] = useState(false);
@@ -102,9 +104,9 @@ export function PostCard({
     '🚀',
   ];
 
-  const toggleLike = async () => {
+  const chooseReaction = async (type: Reaction) => {
     try {
-      const result = liked
+      const result = selectedReaction === type
         ? await apiRequest<{ count: number }>(
             `/posts/${post.id}/reaction`,
             { method: 'DELETE' },
@@ -112,11 +114,12 @@ export function PostCard({
           )
         : await apiRequest<{ count: number }>(
             `/posts/${post.id}/reaction`,
-            { method: 'PUT', body: JSON.stringify({ type: 'Like' }) },
+            { method: 'PUT', body: JSON.stringify({ type }) },
             accessToken,
           );
-      setLiked(!liked);
+      setSelectedReaction(selectedReaction === type ? null : type);
       setCount(result.count);
+      setShowReactionPicker(false);
     } catch {
       /* keep server state unchanged */
     }
@@ -472,10 +475,20 @@ export function PostCard({
             {commentCount} comments · {shares} shares
           </Text>
         </View>
+        {showReactionPicker ? (
+          <View style={styles.reactionPicker}>
+            {(['Like', 'Love', 'Haha', 'Wow', 'Sad', 'Angry'] as Reaction[]).map(type => (
+              <Pressable key={type} onPress={() => void chooseReaction(type)} style={styles.reactionOption}>
+                <Text style={styles.reactionEmoji}>{({Like: '👍', Love: '❤️', Haha: '😂', Wow: '😮', Sad: '😢', Angry: '😡'} as Record<Reaction, string>)[type]}</Text>
+                <Text style={styles.reactionLabel}>{type}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <View style={styles.actions}>
-          <Pressable onPress={toggleLike} style={styles.action}>
+          <Pressable onPress={() => setShowReactionPicker(value => !value)} style={styles.action}>
             <Text style={[styles.actionText, liked && styles.active]}>
-              ♡ Like
+              {selectedReaction ? ({Like: '👍', Love: '❤️', Haha: '😂', Wow: '😮', Sad: '😢', Angry: '😡'} as Record<Reaction, string>)[selectedReaction] : '♡'} {selectedReaction ?? 'Like'}
             </Text>
           </Pressable>
           <Pressable
@@ -836,6 +849,10 @@ const styles = StyleSheet.create({
   action: { paddingVertical: spacing.xs },
   actionText: { fontSize: 12, fontWeight: '900', color: colors.muted },
   active: { color: colors.blue },
+  reactionPicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: colors.surface, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.xs, marginBottom: spacing.sm, ...shadow },
+  reactionOption: { alignItems: 'center', paddingHorizontal: spacing.xs },
+  reactionEmoji: { fontSize: 22 },
+  reactionLabel: { color: colors.muted, fontSize: 8, fontWeight: '800', marginTop: 2 },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15,23,42,.42)',

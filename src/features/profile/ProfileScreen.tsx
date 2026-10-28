@@ -30,6 +30,9 @@ type ProfileData = {
   coverUrl?: string;
   website?: string;
   location?: string;
+  country?: string;
+  education?: string;
+  maritalStatus?: string;
   privateAccount?: boolean;
   accountType?: 'user' | 'page';
   isVerified?: boolean;
@@ -83,9 +86,14 @@ export function ProfileScreen({
   const [coverBusy, setCoverBusy] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
+  const [profileSetupVisible, setProfileSetupVisible] = React.useState(false);
   const [name, setName] = React.useState('');
   const [bio, setBio] = React.useState('');
   const [privateAccount, setPrivateAccount] = React.useState(false);
+  const [country, setCountry] = React.useState('');
+  const [education, setEducation] = React.useState('');
+  const [maritalStatus, setMaritalStatus] = React.useState('');
+  const [location, setLocation] = React.useState('');
   const [error, setError] = React.useState('');
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -107,6 +115,13 @@ export function ProfileScreen({
       setName(data.name);
       setBio(data.bio ?? '');
       setPrivateAccount(Boolean(data.privateAccount));
+      setCountry(data.country ?? '');
+      setEducation(data.education ?? '');
+      setMaritalStatus(data.maritalStatus ?? '');
+      setLocation(data.location ?? '');
+      setProfileSetupVisible(
+        isSelf && !data.bio?.trim() && !data.country?.trim() && !data.location?.trim(),
+      );
       setPosts(
         items.map(item => ({
           id: item._id,
@@ -243,6 +258,10 @@ export function ProfileScreen({
           body: JSON.stringify({
             name: name.trim(),
             bio: bio.trim(),
+            country: country.trim(),
+            education: education.trim(),
+            maritalStatus: maritalStatus.trim(),
+            location: location.trim(),
             privateAccount,
           }),
         },
@@ -442,6 +461,7 @@ export function ProfileScreen({
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
       >
         <Text style={styles.name}>{profile.name}</Text>
+        {profile.accountType === 'page' ? <View style={styles.pageBadge}><Text style={styles.pageBadgeText}>PAGE</Text></View> : null}
         {profile.isVerified ? (
           <View
             style={{
@@ -486,6 +506,13 @@ export function ProfileScreen({
         >
           ⌖ {profile.location}
         </Text>
+      ) : null}
+      {(profile.country || profile.education || profile.maritalStatus) ? (
+        <View style={styles.detailsCard}>
+          {profile.country ? <Text style={styles.detailItem}>🌐 {profile.country}</Text> : null}
+          {profile.education ? <Text style={styles.detailItem}>🎓 {profile.education}</Text> : null}
+          {profile.maritalStatus ? <Text style={styles.detailItem}>♡ {profile.maritalStatus}</Text> : null}
+        </View>
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.stats}>
@@ -547,7 +574,13 @@ export function ProfileScreen({
           {profileTab === 'posts' ? `${posts.length} public` : 'Coming soon'}
         </Text>
       </View>
-      {profileTab === 'posts' && posts.length ? (
+          {profileTab === 'posts' && !isSelf && profile.privateAccount ? (
+            <View style={styles.privateNotice}>
+              <Text style={styles.privateNoticeIcon}>⌑</Text>
+              <Text style={styles.emptyTitle}>This account is private</Text>
+              <Text style={styles.emptyText}>Only the account owner can see these posts.</Text>
+            </View>
+          ) : profileTab === 'posts' && posts.length ? (
         posts.map(post => (
           <PostCard
             key={post.id}
@@ -569,7 +602,7 @@ export function ProfileScreen({
             {profileTab === 'posts'
               ? isSelf
                 ? 'Share your first update'
-                : 'No public posts yet'
+                : profile.privateAccount ? 'This account is private' : 'No public posts yet'
               : `No ${profileTab} yet`}
           </Text>
           <Text style={styles.cardMeta}>
@@ -592,6 +625,40 @@ export function ProfileScreen({
           </View>
         </View>
       ) : null}
+      <Modal
+        visible={profileSetupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProfileSetupVisible(false)}
+      >
+        <View style={styles.tutorialBackdrop}>
+          <View style={styles.tutorialCard}>
+            <View style={styles.tutorialIcon}><Text style={styles.tutorialIconText}>✦</Text></View>
+            <Text style={styles.tutorialEyebrow}>MAKE IT YOURS</Text>
+            <Text style={styles.tutorialTitle}>Complete your profile</Text>
+            <Text style={styles.tutorialCopy}>
+              Help people discover the real you. Add a short bio, your city, and country to make your profile feel complete.
+            </Text>
+            <View style={styles.tutorialChecklist}>
+              <View style={styles.tutorialItem}><Text style={styles.tutorialCheck}>✓</Text><Text style={styles.tutorialItemText}>Tell people about yourself</Text></View>
+              <View style={styles.tutorialItem}><Text style={styles.tutorialCheck}>✓</Text><Text style={styles.tutorialItemText}>Show your city and country</Text></View>
+              <View style={styles.tutorialItem}><Text style={styles.tutorialCheck}>✓</Text><Text style={styles.tutorialItemText}>Control privacy anytime</Text></View>
+            </View>
+            <Pressable
+              style={styles.tutorialButton}
+              onPress={() => {
+                setProfileSetupVisible(false);
+                setEditing(true);
+              }}
+            >
+              <Text style={styles.tutorialButtonText}>Add profile details</Text>
+            </Pressable>
+            <Pressable onPress={() => setProfileSetupVisible(false)} style={styles.tutorialSkip}>
+              <Text style={styles.tutorialSkipText}>I’ll do this later</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={editing}
         transparent
@@ -634,6 +701,15 @@ export function ProfileScreen({
               multiline
               maxLength={280}
             />
+            <View style={styles.fieldGrid}>
+              <View style={styles.fieldHalf}><Text style={styles.inputLabel}>Country</Text><TextInput value={country} onChangeText={setCountry} style={styles.input} placeholder="e.g. Pakistan" placeholderTextColor={colors.muted} /></View>
+              <View style={styles.fieldHalf}><Text style={styles.inputLabel}>Location</Text><TextInput value={location} onChangeText={setLocation} style={styles.input} placeholder="City" placeholderTextColor={colors.muted} /></View>
+            </View>
+            <Text style={styles.inputLabel}>Education</Text>
+            <TextInput value={education} onChangeText={setEducation} style={styles.input} placeholder="School or university" placeholderTextColor={colors.muted} />
+            <Text style={styles.inputLabel}>Marital status</Text>
+            <TextInput value={maritalStatus} onChangeText={setMaritalStatus} style={styles.input} placeholder="Optional" placeholderTextColor={colors.muted} />
+            <Pressable style={styles.privacyRow} onPress={() => setPrivateAccount(value => !value)}><View><Text style={styles.privacyTitle}>Private account</Text><Text style={styles.privacyHint}>Only you can show your profile posts to visitors.</Text></View><Text style={styles.privacyValue}>{privateAccount ? 'ON' : 'OFF'}</Text></Pressable>
             <Pressable
               style={styles.saveButton}
               onPress={() => void saveProfile()}
@@ -652,7 +728,7 @@ export function ProfileScreen({
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: spacing.md, paddingBottom: 120 },
+  content: { padding: spacing.md, paddingBottom: 132 },
   loading: {
     flex: 1,
     backgroundColor: colors.canvas,
@@ -672,10 +748,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
   },
-  topTitle: { fontSize: 21, fontWeight: '900', color: colors.ink },
+  topTitle: { fontSize: 22, fontWeight: '900', color: colors.ink, letterSpacing: -0.5 },
   circle: {
     width: 44,
     height: 44,
@@ -691,8 +767,8 @@ const styles = StyleSheet.create({
   backText: { fontSize: 30, color: colors.ink, lineHeight: 30 },
   settingsIcon: { fontSize: 20, color: colors.muted },
   cover: {
-    height: 144,
-    borderRadius: radius.lg,
+    height: 170,
+    borderRadius: 26,
     overflow: 'hidden',
     backgroundColor: colors.ink,
     position: 'relative',
@@ -728,30 +804,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    marginTop: -38,
-    paddingHorizontal: spacing.md,
+    marginTop: -48,
+    paddingHorizontal: spacing.sm,
   },
   camera: {
     position: 'absolute',
     right: -2,
     bottom: -2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: colors.surface,
   },
-  cameraText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  cameraText: { color: '#fff', fontSize: 18, fontWeight: '900' },
   edit: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderRadius: 14,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     ...shadow,
   },
   editText: { color: colors.blue, fontWeight: '900', fontSize: 12 },
@@ -766,19 +842,23 @@ const styles = StyleSheet.create({
   followText: { color: '#fff', fontWeight: '900', fontSize: 12 },
   followingText: { color: colors.blue },
   name: {
-    fontSize: 28,
+    fontSize: 31,
     fontWeight: '900',
     color: colors.ink,
-    marginTop: spacing.sm,
-    letterSpacing: -0.7,
+    marginTop: spacing.md,
+    letterSpacing: -1,
   },
-  username: { color: colors.blue, fontWeight: '700', marginTop: 3 },
-  bio: { color: colors.muted, lineHeight: 21, marginTop: spacing.md },
+  pageBadge: { backgroundColor: colors.blueSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, marginLeft: spacing.sm, alignSelf: 'center' },
+  pageBadgeText: { color: colors.blue, fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  username: { color: colors.blue, fontWeight: '800', fontSize: 14, marginTop: 4 },
+  bio: { color: colors.muted, lineHeight: 22, fontSize: 14, marginTop: spacing.md },
+  detailsCard: { backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginTop: spacing.lg, ...shadow },
+  detailItem: { color: colors.inkLight, fontSize: 13, marginVertical: 5, fontWeight: '600' },
   stats: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    marginVertical: spacing.lg,
-    padding: spacing.md,
+    borderRadius: 22,
+    marginVertical: spacing.xl,
+    paddingVertical: spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-around',
     borderWidth: 1,
@@ -786,16 +866,16 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   stat: { alignItems: 'center', flex: 1 },
-  number: { fontWeight: '900', fontSize: 20, color: colors.ink },
-  label: { color: colors.muted, fontSize: 11, marginTop: 3, fontWeight: '700' },
+  number: { fontWeight: '900', fontSize: 23, color: colors.ink, letterSpacing: -0.5 },
+  label: { color: colors.muted, fontSize: 11, marginTop: 5, fontWeight: '800' },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  section: { fontSize: 19, fontWeight: '900', color: colors.ink },
-  public: { fontSize: 11, color: colors.success, fontWeight: '800' },
+  section: { fontSize: 21, fontWeight: '900', color: colors.ink, letterSpacing: -0.5 },
+  public: { fontSize: 11, color: colors.success, fontWeight: '900' },
   empty: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -805,6 +885,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadow,
   },
+  privateNotice: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, alignItems: 'center', borderWidth: 1, borderColor: colors.border, marginTop: spacing.md, ...shadow },
+  privateNoticeIcon: { fontSize: 34, color: colors.blue, marginBottom: spacing.sm },
   emptyIcon: { fontSize: 28, color: colors.blue },
   emptyTitle: {
     fontSize: 16,
@@ -812,6 +894,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     marginTop: spacing.sm,
   },
+  emptyText: { color: colors.muted, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: spacing.sm },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -838,6 +921,43 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+  tutorialBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,.58)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  tutorialCard: {
+    width: '100%',
+    maxWidth: 390,
+    backgroundColor: colors.surface,
+    borderRadius: 28,
+    padding: spacing.xl,
+    alignItems: 'center',
+    ...shadow,
+  },
+  tutorialIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  tutorialIconText: { color: '#fff', fontSize: 27, fontWeight: '900' },
+  tutorialEyebrow: { color: colors.blue, fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
+  tutorialTitle: { color: colors.ink, fontSize: 25, fontWeight: '900', letterSpacing: -0.6, marginTop: spacing.xs },
+  tutorialCopy: { color: colors.muted, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: spacing.sm },
+  tutorialChecklist: { width: '100%', backgroundColor: colors.canvas, borderRadius: 18, padding: spacing.md, marginTop: spacing.lg },
+  tutorialItem: { flexDirection: 'row', alignItems: 'center', marginVertical: 5 },
+  tutorialCheck: { width: 21, height: 21, borderRadius: 11, backgroundColor: colors.mint, color: colors.success, textAlign: 'center', lineHeight: 21, fontSize: 12, fontWeight: '900', marginRight: spacing.sm },
+  tutorialItemText: { color: colors.inkLight, fontSize: 12, fontWeight: '700' },
+  tutorialButton: { width: '100%', backgroundColor: colors.blue, borderRadius: radius.pill, alignItems: 'center', paddingVertical: spacing.md, marginTop: spacing.lg },
+  tutorialButtonText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  tutorialSkip: { padding: spacing.sm, marginTop: spacing.xs },
+  tutorialSkipText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   modalBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -885,6 +1005,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
   bioInput: { minHeight: 92, textAlignVertical: 'top' },
+  fieldGrid: { flexDirection: 'row', gap: spacing.sm },
+  fieldHalf: { flex: 1 },
+  privacyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.blueSoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
+  privacyTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  privacyHint: { color: colors.muted, fontSize: 10, marginTop: 3, maxWidth: 250 },
+  privacyValue: { color: colors.blue, fontSize: 11, fontWeight: '900', marginLeft: 'auto' },
   saveButton: {
     backgroundColor: colors.blue,
     borderRadius: radius.pill,
