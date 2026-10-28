@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Modal,
@@ -142,6 +143,14 @@ export function ReelsScreen({
       );
       setItems(current => current.filter(reel => reel._id !== item._id));
     } catch {}
+  };
+  const reportReel = async (item: Reel) => {
+    try {
+      await apiRequest('/reports', {method: 'POST', body: JSON.stringify({targetType: 'reel', targetId: item._id, reason: 'Inappropriate or abusive reel'})}, accessToken);
+      Alert.alert('Report submitted', 'Thanks for helping keep Connectly safe.');
+    } catch (e) {
+      Alert.alert('Unable to report', e instanceof Error ? e.message : 'Please try again later.');
+    }
   };
   const toggleLike = async (item: Reel) => {
     const isLiked = Boolean(liked[item._id]);
@@ -363,6 +372,13 @@ export function ReelsScreen({
                   >
                     <Text style={styles.reelActionIcon}>−</Text>
                     <Text style={styles.reelActionText}>Not for me</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.reelAction}
+                    onPress={() => void reportReel(item)}
+                  >
+                    <Text style={styles.reelActionIcon}>⚑</Text>
+                    <Text style={styles.reelActionText}>Report</Text>
                   </Pressable>
                 </View>
                 <View style={styles.overlay}>

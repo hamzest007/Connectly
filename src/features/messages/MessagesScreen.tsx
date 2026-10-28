@@ -32,10 +32,14 @@ export function MessagesScreen({
   accessToken,
   onBack,
   currentUserId,
+  initialConversationId,
+  onBackFromChat,
 }: {
   accessToken: string;
   onBack?: () => void;
   currentUserId: string;
+  initialConversationId?: string;
+  onBackFromChat?: () => void;
 }) {
   const [items, setItems] = React.useState<Conversation[]>([]);
   const [active, setActive] = React.useState<Conversation | null>(null);
@@ -58,6 +62,11 @@ export function MessagesScreen({
   React.useEffect(() => {
     void load();
   }, [accessToken, load]);
+  React.useEffect(() => {
+    if (!initialConversationId || !items.length || active) return;
+    const conversation = items.find(item => item._id === initialConversationId);
+    if (conversation) void open(conversation);
+  }, [active, initialConversationId, items]);
   const refreshMessages = React.useCallback(async () => {
     if (!active) return;
     try {
@@ -112,7 +121,7 @@ export function MessagesScreen({
     return (
       <View style={styles.page}>
         <View style={styles.chatHeader}>
-          <Pressable onPress={() => setActive(null)}>
+          <Pressable onPress={() => { setActive(null); onBackFromChat?.(); }}>
             <Text style={styles.back}>‹</Text>
           </Pressable>
           <Text style={styles.chatTitle}>

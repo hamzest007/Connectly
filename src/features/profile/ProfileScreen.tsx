@@ -124,10 +124,11 @@ export function ProfileScreen({
   const [location, setLocation] = React.useState('');
   const [error, setError] = React.useState('');
   const [friends, setFriends] = React.useState<ProfileFriend[]>([]);
+  const profileUsername = profileUser?.username;
   React.useEffect(() => {
-    setActiveUsername(profileUser?.username ?? user.username);
-    setIsSelf(!profileUser);
-  }, [profileUser?.username, user.username]);
+    setActiveUsername(profileUsername ?? user.username);
+    setIsSelf(!profileUsername);
+  }, [profileUsername, user.username]);
   const load = React.useCallback(async () => {
     setLoading(true);
     setError('');
@@ -196,7 +197,7 @@ export function ProfileScreen({
     } finally {
       setLoading(false);
     }
-  }, [accessToken, username]);
+  }, [accessToken, isSelf, username]);
   React.useEffect(() => {
     void load();
   }, [load]);
@@ -393,6 +394,15 @@ export function ProfileScreen({
       ],
     );
   };
+  const reportProfile = async () => {
+    if (!profile || isSelf) return;
+    try {
+      await apiRequest('/reports', {method: 'POST', body: JSON.stringify({targetType: profile.accountType === 'page' ? 'page' : 'user', targetId: profile._id, reason: 'Inappropriate or abusive profile'})}, accessToken);
+      Alert.alert('Report submitted', 'Thanks for helping keep Connectly safe.');
+    } catch (e) {
+      Alert.alert('Unable to report', e instanceof Error ? e.message : 'Please try again later.');
+    }
+  };
   const initials = (profile?.name ?? profileUser?.name ?? user.name)
     .split(' ')
     .map(part => part[0])
@@ -440,6 +450,7 @@ export function ProfileScreen({
               : () =>
                   Alert.alert('Profile actions', 'Choose an action', [
                     { text: 'Cancel', style: 'cancel' },
+                    { text: 'Report profile', onPress: () => void reportProfile() },
                     { text: 'Mute', onPress: () => safetyAction('mute') },
                     {
                       text: 'Restrict',

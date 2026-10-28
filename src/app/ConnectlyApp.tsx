@@ -50,6 +50,11 @@ export function ConnectlyApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [feedMode, setFeedMode] = useState<'for-you' | 'saved'>('for-you');
   const [focusPostId, setFocusPostId] = useState<string | undefined>();
+  const [focusConversationId, setFocusConversationId] = useState<string | undefined>();
+  const [messageReturnTab, setMessageReturnTab] = useState<Tab>('menu');
+  const [settingsReturnTab, setSettingsReturnTab] = useState<Tab>('menu');
+  const [blockedReturn, setBlockedReturn] = useState<'main' | 'settings'>('main');
+  const [friendRequestsReturnTab, setFriendRequestsReturnTab] = useState<Tab>('menu');
   const [focusComments, setFocusComments] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [screen, setScreen] = useState<
@@ -94,11 +99,15 @@ export function ConnectlyApp() {
     }
     const params = new URLSearchParams(rawQuery ?? '');
     setFocusPostId(undefined);
+    setFocusConversationId(undefined);
     if (route === 'post' && id) {
       setFocusPostId(id);
       setFeedMode('for-you');
       setTab('home');
       setScreen('main');
+    } else if ((route === 'conversation' || route === 'chat') && id) {
+      setFocusConversationId(id);
+      setScreen('messages');
     } else if (route === 'profile' && id) {
       setProfileUser({name: id, username: id.replace(/^@/, '')});
       setProfileReturnTab('home');
@@ -223,7 +232,7 @@ export function ConnectlyApp() {
       <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
         <BlockedAccountsScreen
           accessToken={session.accessToken}
-          onBack={() => setScreen('main')}
+          onBack={() => setScreen(blockedReturn === 'settings' ? 'settings' : 'main')}
         />
       </SafeAreaView>
     );
@@ -232,7 +241,7 @@ export function ConnectlyApp() {
       <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
         <GroupsScreen
           accessToken={session.accessToken}
-          onBack={() => setScreen('main')}
+          onBack={() => { setScreen('main'); setTab('menu'); }}
         />
       </SafeAreaView>
     );
@@ -242,8 +251,9 @@ export function ConnectlyApp() {
         <SettingsDetailScreen
           kind={settingsKind}
           accessToken={session.accessToken}
-          onBack={() => setScreen('main')}
+          onBack={() => { setScreen('main'); setTab(settingsReturnTab); }}
           onLogout={logout}
+          onBlocked={() => { setBlockedReturn('settings'); setScreen('blocked'); }}
         />
       </SafeAreaView>
     );
@@ -253,22 +263,22 @@ export function ConnectlyApp() {
         <SearchScreen
           accessToken={session.accessToken}
           initialQuery={searchQuery}
-          onBack={() => setScreen('main')}
+          onBack={() => { setScreen('main'); setTab('home'); }}
           onOpenProfile={target => openProfile(target, 'home')}
         />
       </SafeAreaView>
     );
   if (screen === 'friend-requests')
-    return <SafeAreaView style={styles.app} edges={['top', 'bottom']}><FriendRequestsScreen accessToken={session.accessToken} onBack={() => {setScreen('main');setTab('friends');}} onOpenProfile={target => openProfile(target, 'friends')} /></SafeAreaView>;
+    return <SafeAreaView style={styles.app} edges={['top', 'bottom']}><FriendRequestsScreen accessToken={session.accessToken} onBack={() => {setScreen('main');setTab(friendRequestsReturnTab);}} onOpenProfile={target => openProfile(target, friendRequestsReturnTab)} /></SafeAreaView>;
   const content =
     screen === 'messages' ? (
-      <MessagesScreen accessToken={session.accessToken} currentUserId={session.user.id} onBack={() => setScreen('main')} />
+      <MessagesScreen accessToken={session.accessToken} currentUserId={session.user.id} initialConversationId={focusConversationId} onBack={() => {setFocusConversationId(undefined); setScreen('main'); setTab(messageReturnTab);}} onBackFromChat={focusConversationId ? () => {setFocusConversationId(undefined); setScreen('main'); setTab(messageReturnTab);} : undefined} />
     ) : screen === 'profile' ? (
       <ProfileScreen
         user={session.user}
         accessToken={session.accessToken}
         profileUser={profileUser}
-        onBack={profileUser ? closeProfile : undefined}
+        onBack={closeProfile}
         onSettings={() => {
           setProfileUser(undefined);
           setScreen('main');
@@ -296,7 +306,7 @@ export function ConnectlyApp() {
     ) : tab === 'friends' ? (
       <FriendsScreen
         accessToken={session.accessToken}
-        onOpenRequests={() => setScreen('friend-requests')}
+        onOpenRequests={() => { setFriendRequestsReturnTab('friends'); setScreen('friend-requests'); }}
         onOpenProfile={target => openProfile(target, 'friends')}
       />
     ) : tab === 'notifications' ? (
@@ -305,6 +315,7 @@ export function ConnectlyApp() {
         profileType={session.user.accountType === 'page' ? 'page' : 'personal'}
         onOpenEntity={item => {
           if (item.entityType === 'friend-request') {
+            setFriendRequestsReturnTab('notifications');
             setScreen('friend-requests');
           } else if (item.entityType === 'post' && item.entityId) {
             setFocusPostId(item.entityId);
@@ -316,6 +327,10 @@ export function ConnectlyApp() {
             setProfileUser({name: item.actorId.name, username: item.actorId.username});
             setProfileReturnTab('notifications');
             setScreen('profile');
+          } else if (item.entityType === 'conversation' && item.entityId) {
+            setFocusConversationId(item.entityId);
+            setMessageReturnTab('notifications');
+            setScreen('messages');
           }
         }}
       />
@@ -325,12 +340,13 @@ export function ConnectlyApp() {
           setFeedMode('for-you');
           setTab('home');
         }}
-        onFriends={() => setTab('friends')}
+        onFriends={() => { setFriendRequestsReturnTab('menu'); setScreen('friend-requests'); }}
         onSaved={openSaved}
-        onMessages={() => setScreen('messages')}
-        onBlocked={() => setScreen('blocked')}
+        onMessages={() => { setMessageReturnTab('menu'); setScreen('messages'); }}
+        onBlocked={() => { setBlockedReturn('main'); setScreen('blocked'); setTab('menu'); }}
         onGroups={() => setScreen('groups')}
         onDetail={kind => {
+          setSettingsReturnTab('menu');
           setSettingsKind(kind);
           setScreen('settings');
         }}

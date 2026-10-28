@@ -22,6 +22,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit ?? 12), 1), 50);
   const feed = z.enum(['for-you','following','friends','latest','trending','reels']).catch('for-you').parse(String(req.query.feed ?? 'for-you'));
   const activePublisher=(await User.findById(req.userId).select('accountType'))?.accountType==='page'?'page':'personal';
+  const ownPublisherFilter=activePublisher==='page'?{publisherType:'page'}:{$or:[{publisherType:'personal'},{publisherType:{$exists:false}}]};
   const hidden = await HiddenPost.find({userId:req.userId}).distinct('postId');
   const feedbackHidden = await RecommendationFeedback.find({userId:req.userId,type:'not-interested'}).distinct('postId');
   const blocked = await Block.find({blockerId:req.userId}).distinct('blockedId');
@@ -38,13 +39,13 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const groupIds = await GroupMember.find({userId:req.userId,status:'active'}).distinct('groupId');
   if (feed === 'reels') {
     query.audience = 'public';
-    query.$or = [{authorId:{$ne:req.userId}},{authorId:req.userId,publisherType:activePublisher}];
+    query.$or = [{authorId:{$ne:req.userId}},{authorId:req.userId,...ownPublisherFilter}];
   } else if (feed === 'friends') {
-    query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId,publisherType:activePublisher}];
+    query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId,...ownPublisherFilter}];
   } else if (feed === 'following') {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {audience:'friends',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {groupId:{$in:groupIds},audience:'public'}];
   } else {
-    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId,publisherType:activePublisher}];
+    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId,...ownPublisherFilter}];
   }
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};

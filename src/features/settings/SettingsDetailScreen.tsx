@@ -29,20 +29,23 @@ export function SettingsDetailScreen({
   accessToken,
   onBack,
   onLogout,
+  onBlocked,
 }: {
   kind: Kind;
   accessToken: string;
   onBack: () => void;
   onLogout: () => void;
+  onBlocked?: () => void;
 }) {
   const [loading, setLoading] = React.useState(
-    kind === 'activity' || kind === 'security' || kind === 'notifications' || kind === 'creator' || kind === 'close-friends' || kind === 'monetization',
+    kind === 'activity' || kind === 'privacy' || kind === 'security' || kind === 'notifications' || kind === 'creator' || kind === 'close-friends' || kind === 'monetization',
   );
   const [items, setItems] = React.useState<any[]>([]);
   const [prefs, setPrefs] = React.useState<any>(null);
   const [following, setFollowing] = React.useState<any[]>([]);
   const [closeFriends, setCloseFriends] = React.useState<Set<string>>(new Set());
   const [monetization, setMonetization] = React.useState<any>(null);
+  const [privacyAccount, setPrivacyAccount] = React.useState(false);
   const labels: { [key in Kind]: [string, string] } = {
     activity: ['Your activity', 'Review your recent account activity.'],
     privacy: [
@@ -100,6 +103,10 @@ export function SettingsDetailScreen({
               accessToken,
             ),
           );
+        if (kind === 'privacy') {
+          const profile = await apiRequest<{privateAccount?: boolean}>('/users/me', {}, accessToken);
+          setPrivacyAccount(Boolean(profile.privateAccount));
+        }
       } catch {
       } finally {
         setLoading(false);
@@ -182,6 +189,8 @@ export function SettingsDetailScreen({
           },
         },
       ]);
+    } else if (label === 'Blocked accounts') {
+      onBlocked?.();
     } else
       Alert.alert(
         label,
@@ -202,6 +211,23 @@ export function SettingsDetailScreen({
       <Text style={styles.subtitle}>{labels[kind][1]}</Text>
       {loading ? (
         <ActivityIndicator color={colors.blue} style={styles.loader} />
+      ) : kind === 'privacy' ? (
+        <View>
+          <Pressable style={styles.row} onPress={async () => {
+            const next = !privacyAccount;
+            try {
+              await apiRequest('/users/me', {method: 'PATCH', body: JSON.stringify({privateAccount: next})}, accessToken);
+              setPrivacyAccount(next);
+            } catch (e) {
+              Alert.alert('Unable to update privacy', e instanceof Error ? e.message : 'Please try again.');
+            }
+          }}>
+            <View style={styles.copy}><Text style={styles.rowTitle}>Private account</Text><Text style={styles.rowMeta}>{privacyAccount ? 'Only approved friends can see your posts' : 'Anyone can see your public posts'}</Text></View>
+            <View style={[styles.toggle, privacyAccount && styles.toggleOn]}><View style={[styles.thumb, privacyAccount && styles.thumbOn]} /></View>
+          </Pressable>
+          <Text style={styles.sectionHint}>Your privacy setting applies immediately to profile posts and the Friends list. You can change it anytime.</Text>
+          {['Blocked accounts', 'Muted accounts', 'Restricted accounts'].map(label => <Pressable style={styles.row} key={label} onPress={() => void action(label)}><View style={styles.copy}><Text style={styles.rowTitle}>{label}</Text><Text style={styles.rowMeta}>Manage who can interact with you</Text></View><Text style={styles.chevron}>›</Text></Pressable>)}
+        </View>
       ) : kind === 'notifications' && prefs ? (
         <View>
           {(['engagement', 'social', 'messages', 'account'] as const).map(
@@ -311,13 +337,6 @@ export function SettingsDetailScreen({
             ? ['Export my data', 'Clear search history']
             : kind === 'account'
             ? ['Deactivate account', 'Delete account']
-            : kind === 'privacy'
-            ? [
-                'Private account',
-                'Blocked accounts',
-                'Muted accounts',
-                'Restricted accounts',
-              ]
             : kind === 'support'
             ? ['Help center', 'Report a problem', 'Community guidelines']
             : kind === 'content'
