@@ -181,7 +181,7 @@ export function ConnectlyApp() {
   useEffect(() => {
     if (!session) return;
     void apiRequest<{ count: number }>(
-      '/notifications/unread-count',
+      session.user.accountType === 'page' ? '/notifications/page/unread-count' : '/notifications/unread-count',
       {},
       session.accessToken,
     )
@@ -274,6 +274,12 @@ export function ConnectlyApp() {
           setScreen('main');
           setTab('menu');
         }}
+        onAccountUpdated={updated => setSession(current => {
+          if (!current) return current;
+          const next = {...current, user: {...current.user, ...updated}};
+          void saveSession(next);
+          return next;
+        })}
       />
     ) : tab === 'create' ? (
       <CreatePostScreen
@@ -296,6 +302,7 @@ export function ConnectlyApp() {
     ) : tab === 'notifications' ? (
       <NotificationsScreen
         accessToken={session.accessToken}
+        profileType={session.user.accountType === 'page' ? 'page' : 'personal'}
         onOpenEntity={item => {
           if (item.entityType === 'post' && item.entityId) {
             setFocusPostId(item.entityId);
@@ -365,19 +372,7 @@ export function ConnectlyApp() {
               style={[styles.navItem, tab === item.key && styles.navItemActive]}
             >
               <View>
-                {item.key === 'menu' || item.key === 'home' ? (
-                  <Text
-                    style={[styles.icon, tab === item.key && styles.active]}
-                  >
-                    {item.icon}
-                  </Text>
-                ) : (
-                  <Text
-                    style={[styles.icon, tab === item.key && styles.active]}
-                  >
-                    {item.icon}
-                  </Text>
-                )}
+                {item.key === 'create' ? <View style={styles.createIcon}><Text style={styles.createIconText}>+</Text></View> : <Text style={[styles.icon, tab === item.key && styles.active]}>{item.icon}</Text>}
                 {item.key === 'notifications' && unreadNotifications > 0 ? (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>
@@ -386,7 +381,7 @@ export function ConnectlyApp() {
                   </View>
                 ) : null}
               </View>
-              <Text style={[styles.label, tab === item.key && styles.active]}>
+              <Text style={[styles.label, tab === item.key && styles.active, item.key === 'create' && styles.createLabel]}>
                 {item.label}
               </Text>
             </Pressable>
@@ -426,31 +421,33 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 14,
     right: 14,
-    bottom: 16,
-    height: 74,
+    bottom: 14,
+    height: 82,
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: 27,
     borderWidth: 1,
     borderColor: colors.border,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     shadowColor: '#27305F',
     shadowOpacity: 0.14,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10,
   },
   navItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 58,
-    height: 56,
-    borderRadius: radius.md,
+    minWidth: 62,
+    height: 64,
+    borderRadius: 20,
   },
   navItemActive: { backgroundColor: colors.blueSoft },
-  icon: { fontSize: 21, color: colors.muted, height: 27, lineHeight: 25 },
+  icon: { fontSize: 22, color: colors.muted, height: 28, lineHeight: 27 },
+  createIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', marginBottom: 2, shadowColor: colors.blue, shadowOpacity: .3, shadowRadius: 9, shadowOffset: {width: 0, height: 4}, elevation: 5 },
+  createIconText: { color: '#fff', fontSize: 27, fontWeight: '400', lineHeight: 31 },
   label: {
     fontSize: 10,
     color: colors.muted,
@@ -458,6 +455,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   active: { color: colors.blue },
+  createLabel: { color: colors.inkLight },
   badge: {
     position: 'absolute',
     right: -10,

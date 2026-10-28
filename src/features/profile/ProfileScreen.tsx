@@ -35,6 +35,15 @@ type ProfileData = {
   maritalStatus?: string;
   privateAccount?: boolean;
   accountType?: 'user' | 'page';
+  pageEnabled?: boolean;
+  pageName?: string;
+  pageUsername?: string;
+  pageCategory?: string;
+  pageWebsite?: string;
+  pageEmail?: string;
+  pagePhone?: string;
+  pageLocation?: string;
+  pageCountry?: string;
   isVerified?: boolean;
   followersCount: number;
   followingCount: number;
@@ -59,6 +68,7 @@ type ProfilePost = {
   media?: Post['media'];
   authorId: { _id: string; name: string; username: string; avatarUrl?: string };
 };
+type PageDashboard = {page:{name:string;username:string;active:boolean};followers:number;engagement:{posts:number;likes:number;comments:number;shares:number;views:number;reach:number};monetization:{enabled:boolean;tipsEnabled:boolean;subscriptionsEnabled:boolean};followerGrowth:Array<{_id:string;count:number}>;topPosts:Array<{_id:string;body:string;reactionCount:number;commentCount:number;shareCount:number;viewCount:number}>;followerList:Array<{followerId:{name:string;username:string;avatarUrl?:string;accountType?:'user'|'page'}}>};
 
 export function ProfileScreen({
   onSettings,
@@ -66,15 +76,18 @@ export function ProfileScreen({
   accessToken,
   user,
   profileUser,
+  onAccountUpdated,
 }: {
   onSettings: () => void;
   onBack?: () => void;
   accessToken: string;
   user: User;
   profileUser?: { name: string; username: string };
+  onAccountUpdated?: (account: {name:string;username:string;avatarUrl?:string}) => void;
 }) {
   const isSelf = !profileUser;
-  const username = profileUser?.username ?? user.username;
+  const [activeUsername, setActiveUsername] = React.useState(profileUser?.username ?? user.username);
+  const username = activeUsername;
   const [profile, setProfile] = React.useState<ProfileData | null>(null);
   const [posts, setPosts] = React.useState<Post[]>([]);
   const [profileTab, setProfileTab] = React.useState<
@@ -87,6 +100,19 @@ export function ProfileScreen({
   const [saving, setSaving] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [profileSetupVisible, setProfileSetupVisible] = React.useState(false);
+  const [pageModalVisible, setPageModalVisible] = React.useState(false);
+  const [pageName, setPageName] = React.useState('');
+  const [pageUsername, setPageUsername] = React.useState('');
+  const [pageBio, setPageBio] = React.useState('');
+  const [pageCategory, setPageCategory] = React.useState('');
+  const [pageWebsite, setPageWebsite] = React.useState('');
+  const [pageEmail, setPageEmail] = React.useState('');
+  const [pagePhone, setPagePhone] = React.useState('');
+  const [pageLocation, setPageLocation] = React.useState('');
+  const [pageCountry, setPageCountry] = React.useState('');
+  const [pageBusy, setPageBusy] = React.useState(false);
+  const [pageDashboardVisible, setPageDashboardVisible] = React.useState(false);
+  const [pageDashboard, setPageDashboard] = React.useState<PageDashboard | null>(null);
   const [name, setName] = React.useState('');
   const [bio, setBio] = React.useState('');
   const [privateAccount, setPrivateAccount] = React.useState(false);
@@ -95,23 +121,26 @@ export function ProfileScreen({
   const [maritalStatus, setMaritalStatus] = React.useState('');
   const [location, setLocation] = React.useState('');
   const [error, setError] = React.useState('');
+  React.useEffect(() => {
+    setActiveUsername(profileUser?.username ?? user.username);
+  }, [profileUser?.username, user.username]);
   const load = React.useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [data, items] = await Promise.all([
-        apiRequest<ProfileData>(
-          `/users/${encodeURIComponent(username)}`,
-          {},
-          accessToken,
-        ),
-        apiRequest<ProfilePost[]>(
-          `/users/${encodeURIComponent(username)}/posts`,
-          {},
-          accessToken,
-        ),
-      ]);
+      const data = await apiRequest<ProfileData | null>(
+        isSelf ? '/users/me' : `/users/${encodeURIComponent(username)}`,
+        {},
+        accessToken,
+      );
+      if (!data) throw new Error('This profile is no longer available.');
+      const items = await apiRequest<ProfilePost[]>(
+        `/users/${encodeURIComponent(data.username)}/posts`,
+        {},
+        accessToken,
+      );
       setProfile(data);
+      if (isSelf) setActiveUsername(data.username);
       setName(data.name);
       setBio(data.bio ?? '');
       setPrivateAccount(Boolean(data.privateAccount));
@@ -119,6 +148,9 @@ export function ProfileScreen({
       setEducation(data.education ?? '');
       setMaritalStatus(data.maritalStatus ?? '');
       setLocation(data.location ?? '');
+      setPageName(data.pageName ?? '');
+      setPageUsername(data.pageUsername ?? '');
+      setPageCategory(data.pageCategory ?? ''); setPageWebsite(data.pageWebsite ?? ''); setPageEmail(data.pageEmail ?? ''); setPagePhone(data.pagePhone ?? ''); setPageLocation(data.pageLocation ?? ''); setPageCountry(data.pageCountry ?? '');
       setProfileSetupVisible(
         isSelf && !data.bio?.trim() && !data.country?.trim() && !data.location?.trim(),
       );
@@ -274,6 +306,42 @@ export function ProfileScreen({
     } finally {
       setSaving(false);
     }
+  };
+  const createPage = async () => {
+    if (pageBusy || !pageName.trim() || !pageUsername.trim()) return;
+    setPageBusy(true); setError('');
+    try {
+      const updated = await apiRequest<ProfileData>('/users/me/page', {method:'POST', body:JSON.stringify({name:pageName.trim(),username:pageUsername.trim().toLowerCase(),bio:pageBio.trim(),category:pageCategory.trim(),website:pageWebsite.trim(),email:pageEmail.trim(),phone:pagePhone.trim(),location:pageLocation.trim(),country:pageCountry.trim()})}, accessToken);
+      setProfile(current => current ? {...current,...updated} : current);
+      setPageModalVisible(false);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to create your Page.'); }
+    finally { setPageBusy(false); }
+  };
+  const switchPageMode = async () => {
+    if (!profile?.pageEnabled || pageBusy) return;
+    setPageBusy(true); setError('');
+    try {
+      const mode=profile.accountType==='page'?'personal':'page';
+      const updated=await apiRequest<ProfileData>('/users/me/page-mode',{method:'PATCH',body:JSON.stringify({mode})},accessToken);
+      setProfile(current=>current?{...current,...updated}:current);
+      setName(updated.name); setBio(updated.bio??'');
+      setActiveUsername(updated.username);
+      onAccountUpdated?.({name:updated.name,username:updated.username,avatarUrl:updated.avatarUrl});
+    } catch(e) { setError(e instanceof Error ? e.message : 'Unable to switch account mode.'); }
+    finally { setPageBusy(false); }
+  };
+  const openPageDashboard = async () => {
+    if (pageBusy) return;
+    setPageBusy(true); setError('');
+    try { setPageDashboard(await apiRequest<PageDashboard>('/users/me/page-dashboard', {}, accessToken)); setPageDashboardVisible(true); }
+    catch(e) { setError(e instanceof Error ? e.message : 'Unable to load Page dashboard.'); }
+    finally { setPageBusy(false); }
+  };
+  const updateMonetization = async (key:'enabled'|'tipsEnabled'|'subscriptionsEnabled') => {
+    if (!pageDashboard) return;
+    const next=!pageDashboard.monetization[key];
+    try { const updated=await apiRequest<PageDashboard['monetization']>('/users/me/monetization',{method:'PATCH',body:JSON.stringify({[key]:next})},accessToken); setPageDashboard(current=>current?{...current,monetization:updated}:current); }
+    catch(e) { setError(e instanceof Error ? e.message : 'Unable to update monetization.'); }
   };
   const safetyAction = (action: 'block' | 'mute' | 'restrict') => {
     if (!profile || isSelf) return;
@@ -457,6 +525,14 @@ export function ProfileScreen({
           </Pressable>
         )}
       </View>
+      {isSelf ? (
+        <Pressable style={styles.pageSwitchCard} onPress={() => profile.pageEnabled ? void switchPageMode() : setPageModalVisible(true)} disabled={pageBusy}>
+          <View style={styles.pageSwitchIcon}><Text style={styles.pageSwitchIconText}>▦</Text></View>
+          <View style={styles.pageSwitchCopy}><Text style={styles.pageSwitchTitle}>{profile.pageEnabled ? (profile.accountType === 'page' ? 'Switch to personal profile' : `Switch to ${profile.pageName || 'your Page'}`) : 'Create a Page'}</Text><Text style={styles.pageSwitchHint}>{profile.pageEnabled ? 'Change your active identity anytime' : 'Build a public presence for your brand or community'}</Text></View>
+          <Text style={styles.pageSwitchArrow}>{pageBusy ? '…' : '›'}</Text>
+        </Pressable>
+      ) : null}
+      {isSelf && profile.pageEnabled ? <Pressable style={styles.dashboardCard} onPress={() => void openPageDashboard()} disabled={pageBusy}><View><Text style={styles.dashboardEyebrow}>PAGE TOOLS</Text><Text style={styles.dashboardTitle}>Page dashboard</Text><Text style={styles.dashboardHint}>Engagement, followers and monetization</Text></View><Text style={styles.pageSwitchArrow}>{pageBusy ? '…' : '›'}</Text></Pressable> : null}
       <View
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
       >
@@ -659,6 +735,39 @@ export function ProfileScreen({
           </View>
         </View>
       </Modal>
+      <Modal visible={pageModalVisible} transparent animationType="slide" onRequestClose={() => setPageModalVisible(false)}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <Pressable style={styles.dismiss} onPress={() => setPageModalVisible(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Create a Page</Text><Text style={styles.sheetSubtitle}>Give your public presence its own identity.</Text></View><Pressable onPress={() => setPageModalVisible(false)}><Text style={styles.close}>×</Text></Pressable></View>
+            <Text style={styles.inputLabel}>Page name</Text>
+            <TextInput value={pageName} onChangeText={setPageName} style={styles.input} placeholder="e.g. Connectly Community" placeholderTextColor={colors.muted} />
+            <Text style={styles.inputLabel}>Page username</Text>
+            <TextInput value={pageUsername} onChangeText={setPageUsername} autoCapitalize="none" style={styles.input} placeholder="e.g. connectlycommunity" placeholderTextColor={colors.muted} />
+            <Text style={styles.inputLabel}>About your Page</Text>
+            <TextInput value={pageBio} onChangeText={setPageBio} style={[styles.input, styles.bioInput]} multiline maxLength={280} placeholder="What is your Page about?" placeholderTextColor={colors.muted} />
+            <Text style={styles.inputLabel}>Category</Text><TextInput value={pageCategory} onChangeText={setPageCategory} style={styles.input} placeholder="e.g. Community, Business, Creator" placeholderTextColor={colors.muted} />
+            <View style={styles.fieldGrid}><View style={styles.fieldHalf}><Text style={styles.inputLabel}>City</Text><TextInput value={pageLocation} onChangeText={setPageLocation} style={styles.input} placeholder="City" placeholderTextColor={colors.muted} /></View><View style={styles.fieldHalf}><Text style={styles.inputLabel}>Country</Text><TextInput value={pageCountry} onChangeText={setPageCountry} style={styles.input} placeholder="Country" placeholderTextColor={colors.muted} /></View></View>
+            <Text style={styles.inputLabel}>Website</Text><TextInput value={pageWebsite} onChangeText={setPageWebsite} style={styles.input} placeholder="https://yourpage.com" placeholderTextColor={colors.muted} autoCapitalize="none" />
+            <View style={styles.fieldGrid}><View style={styles.fieldHalf}><Text style={styles.inputLabel}>Page email</Text><TextInput value={pageEmail} onChangeText={setPageEmail} style={styles.input} placeholder="hello@example.com" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" /></View><View style={styles.fieldHalf}><Text style={styles.inputLabel}>Phone</Text><TextInput value={pagePhone} onChangeText={setPagePhone} style={styles.input} placeholder="Optional" placeholderTextColor={colors.muted} keyboardType="phone-pad" /></View></View>
+            <Pressable style={styles.saveButton} onPress={() => void createPage()} disabled={pageBusy || !pageName.trim() || !pageUsername.trim()}><Text style={styles.saveText}>{pageBusy ? 'Creating…' : 'Create Page'}</Text></Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      <Modal visible={pageDashboardVisible} transparent animationType="slide" onRequestClose={() => setPageDashboardVisible(false)}>
+        <View style={styles.modalBackdrop}><Pressable style={styles.dismiss} onPress={() => setPageDashboardVisible(false)} /><View style={styles.dashboardSheet}><View style={styles.sheetHandle} /><View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Page dashboard</Text><Text style={styles.sheetSubtitle}>{pageDashboard?.page.name} · @{pageDashboard?.page.username}</Text></View><Pressable onPress={() => setPageDashboardVisible(false)}><Text style={styles.close}>×</Text></Pressable></View>
+          <View style={styles.metricGrid}>{[['Followers',pageDashboard?.followers??0],['Posts',pageDashboard?.engagement.posts??0],['Views',pageDashboard?.engagement.views??0],['Reach',pageDashboard?.engagement.reach??0],['Likes',pageDashboard?.engagement.likes??0],['Comments',pageDashboard?.engagement.comments??0]].map(([label,value])=><View style={styles.metricCard} key={String(label)}><Text style={styles.metricValue}>{value}</Text><Text style={styles.metricLabel}>{label}</Text></View>)}</View>
+          <Text style={styles.dashboardSectionTitle}>Monetization</Text>
+          {(['enabled','tipsEnabled','subscriptionsEnabled'] as const).map(key=><Pressable key={key} style={styles.monetizationRow} onPress={() => void updateMonetization(key)}><View><Text style={styles.monetizationTitle}>{key==='enabled'?'Monetization status':key==='tipsEnabled'?'Tips':'Subscriptions'}</Text><Text style={styles.monetizationHint}>{pageDashboard?.monetization[key]?'Enabled':'Not enabled'}</Text></View><Text style={[styles.monetizationValue,pageDashboard?.monetization[key]&&styles.monetizationOn]}>{pageDashboard?.monetization[key]?'ON':'OFF'}</Text></Pressable>)}
+          <Text style={styles.dashboardSectionTitle}>Follower growth · 7 days</Text>
+          <View style={styles.growthRow}>{(pageDashboard?.followerGrowth??[]).length ? pageDashboard?.followerGrowth.map(day=><View style={styles.growthBarWrap} key={day._id}><View style={[styles.growthBar,{height:Math.max(8,Math.min(70,day.count*12))}]} /><Text style={styles.growthLabel}>{day._id.slice(5)}</Text></View>) : <Text style={styles.monetizationHint}>No new followers in the last 7 days.</Text>}</View>
+          <Text style={styles.dashboardSectionTitle}>Top recent content</Text>
+          {(pageDashboard?.topPosts??[]).length ? pageDashboard?.topPosts.map(post=><View style={styles.topPostRow} key={post._id}><Text numberOfLines={1} style={styles.topPostBody}>{post.body||'Media post'}</Text><Text style={styles.topPostStats}>{post.reactionCount} likes · {post.commentCount} comments · {post.viewCount} views</Text></View>) : <Text style={styles.monetizationHint}>Publish content to see performance here.</Text>}
+          <Text style={styles.dashboardSectionTitle}>Followers</Text>
+          {(pageDashboard?.followerList??[]).length ? pageDashboard?.followerList.slice(0,10).map(item=><View style={styles.followerRow} key={item.followerId.username}><Avatar initials={item.followerId.name.split(' ').map(part=>part[0]).join('').slice(0,2)} avatarUrl={item.followerId.avatarUrl} size={34}/><View style={styles.followerCopy}><Text style={styles.followerName}>{item.followerId.name}</Text><Text style={styles.followerUsername}>@{item.followerId.username}</Text></View><Text style={styles.followerType}>{item.followerId.accountType==='page'?'Page':'Follower'}</Text></View>) : <Text style={styles.monetizationHint}>Your followers will appear here.</Text>}
+        </View></View>
+      </Modal>
       <Modal
         visible={editing}
         transparent
@@ -850,6 +959,17 @@ const styles = StyleSheet.create({
   },
   pageBadge: { backgroundColor: colors.blueSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, marginLeft: spacing.sm, alignSelf: 'center' },
   pageBadgeText: { color: colors.blue, fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  pageSwitchCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.ink, borderRadius: 20, padding: spacing.sm, marginTop: spacing.lg, ...shadow },
+  pageSwitchIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  pageSwitchIconText: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  pageSwitchCopy: { flex: 1, marginLeft: spacing.sm },
+  pageSwitchTitle: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  pageSwitchHint: { color: 'rgba(255,255,255,.64)', fontSize: 10, marginTop: 3 },
+  pageSwitchArrow: { color: '#fff', fontSize: 28, marginHorizontal: spacing.xs },
+  dashboardCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.blueSoft, borderRadius: 20, padding: spacing.md, marginTop: spacing.sm },
+  dashboardEyebrow: { color: colors.blue, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  dashboardTitle: { color: colors.ink, fontSize: 15, fontWeight: '900', marginTop: 3 },
+  dashboardHint: { color: colors.muted, fontSize: 11, marginTop: 3 },
   username: { color: colors.blue, fontWeight: '800', fontSize: 14, marginTop: 4 },
   bio: { color: colors.muted, lineHeight: 22, fontSize: 14, marginTop: spacing.md },
   detailsCard: { backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginTop: spacing.lg, ...shadow },
@@ -958,6 +1078,29 @@ const styles = StyleSheet.create({
   tutorialButtonText: { color: '#fff', fontSize: 13, fontWeight: '900' },
   tutorialSkip: { padding: spacing.sm, marginTop: spacing.xs },
   tutorialSkipText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  dashboardSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.md, maxHeight: '82%' },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  metricCard: { width: '31.5%', minHeight: 72, backgroundColor: colors.canvas, borderRadius: 15, padding: spacing.sm, justifyContent: 'center' },
+  metricValue: { color: colors.ink, fontSize: 20, fontWeight: '900' },
+  metricLabel: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 3 },
+  dashboardSectionTitle: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: spacing.lg, marginBottom: spacing.xs },
+  monetizationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm },
+  monetizationTitle: { color: colors.inkLight, fontSize: 13, fontWeight: '800' },
+  monetizationHint: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  monetizationValue: { color: colors.muted, fontSize: 11, fontWeight: '900', paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt },
+  monetizationOn: { color: colors.success, backgroundColor: colors.mint },
+  growthRow: { minHeight: 92, backgroundColor: colors.canvas, borderRadius: 16, padding: spacing.sm, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around' },
+  growthBarWrap: { alignItems: 'center', justifyContent: 'flex-end', height: 82, flex: 1 },
+  growthBar: { width: 13, minHeight: 8, borderRadius: 7, backgroundColor: colors.blue },
+  growthLabel: { color: colors.muted, fontSize: 8, marginTop: 4 },
+  topPostRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm },
+  topPostBody: { color: colors.inkLight, fontSize: 12, fontWeight: '800' },
+  topPostStats: { color: colors.muted, fontSize: 10, marginTop: 3 },
+  followerRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm },
+  followerCopy: { flex: 1, marginLeft: spacing.sm },
+  followerName: { color: colors.inkLight, fontSize: 12, fontWeight: '800' },
+  followerUsername: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  followerType: { color: colors.blue, fontSize: 10, fontWeight: '800' },
   modalBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',

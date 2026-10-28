@@ -36,7 +36,7 @@ router.get('/analytics', asyncHandler(async(_req,res)=>{
 
 router.get('/users', asyncHandler(async(req,res)=>{
   const limit=Math.min(Math.max(Number(req.query.limit??25),1),100); const q=String(req.query.q??'').trim(); const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{username:{$regex:q,$options:'i'}},{email:{$regex:q,$options:'i'}}]}:{};
-  const users=await User.find(filter).select('name username email role status accountType privateAccount isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).limit(limit);
+  const users=await User.find(filter).select('name username email role status accountType pageEnabled pageName pageUsername privateAccount isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).limit(limit);
   return ok(res,{items:users});
 }));
 

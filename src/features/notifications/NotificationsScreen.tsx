@@ -22,16 +22,16 @@ type Notice = {
   entityId?: string;
   actorId?: { name: string; username?: string; avatarUrl?: string };
 };
-export function NotificationsScreen({ accessToken, onOpenEntity }: { accessToken: string; onOpenEntity?: (item: Notice) => void }) {
+export function NotificationsScreen({ accessToken, profileType = 'personal', onOpenEntity }: { accessToken: string; profileType?: 'personal'|'page'; onOpenEntity?: (item: Notice) => void }) {
   const [items, setItems] = React.useState<Notice[]>([]);
   const [loading, setLoading] = React.useState(true);
   const load = React.useCallback(() => {
     setLoading(true);
-    void apiRequest<{ items: Notice[] }>('/notifications', {}, accessToken)
+    void apiRequest<{ items: Notice[] }>(profileType === 'page' ? '/notifications/page' : '/notifications', {}, accessToken)
       .then(result => setItems(result.items))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, [accessToken]);
+  }, [accessToken, profileType]);
   React.useEffect(() => {
     load();
   }, [load]);
@@ -88,7 +88,7 @@ export function NotificationsScreen({ accessToken, onOpenEntity }: { accessToken
           <Pressable
             onPress={() =>
               void apiRequest(
-                '/notifications/read-all',
+                profileType === 'page' ? '/notifications/page/read-all' : '/notifications/read-all',
                 { method: 'POST' },
                 accessToken,
               ).then(() => void load())

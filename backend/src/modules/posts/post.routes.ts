@@ -10,16 +10,18 @@ import {Friendship} from '../friends/friend.model';
 import {Block} from '../blocks/block.model';
 import {notify} from '../notifications/notification.service';
 import {GroupMember} from '../groups/group.model';
+import {User} from '../auth/auth.model';
 
 const router = Router();
 const mediaInput = z.object({url: z.string().url(), type: z.enum(['image', 'video']), thumbnailUrl: z.string().url().optional()});
-const postInput = z.object({body: z.string().trim().max(5000).default(''), audience: z.enum(['public', 'friends', 'close-friends', 'private']).default('public'), location: z.string().trim().max(120).default(''), media: z.array(mediaInput).max(10).default([]), hashtags: z.array(z.string().regex(/^#[a-z0-9_]+$/i)).max(30).default([]), mentions: z.array(z.string()).max(50).default([]), isReel: z.boolean().default(false), status: z.enum(['draft', 'scheduled', 'published']).default('published'), scheduledFor: z.coerce.date().nullable().optional(), accessibilityText: z.string().trim().max(500).default(''), contentWarning: z.string().trim().max(160).default(''), commentsDisabled: z.boolean().default(false), repostOf: z.string().optional(), quoteBody: z.string().trim().max(5000).default(''), poll: z.object({question:z.string().trim().min(1).max(240),options:z.array(z.object({label:z.string().trim().min(1).max(80)})).min(2).max(6),endsAt:z.coerce.date().optional()}).optional()}).refine(value => value.status === 'draft' || value.body.length > 0 || value.media.length > 0 || Boolean(value.repostOf) || Boolean(value.poll), 'A post needs text, media, or a poll.').refine(value => !value.isReel || (value.audience === 'public' && value.media.length === 1 && value.media[0].type === 'video'), 'A reel must be one public video.');
+const postInput = z.object({publisherType:z.enum(['personal','page']).optional(),body: z.string().trim().max(5000).default(''), audience: z.enum(['public', 'friends', 'close-friends', 'private']).default('public'), location: z.string().trim().max(120).default(''), media: z.array(mediaInput).max(10).default([]), hashtags: z.array(z.string().regex(/^#[a-z0-9_]+$/i)).max(30).default([]), mentions: z.array(z.string()).max(50).default([]), isReel: z.boolean().default(false), status: z.enum(['draft', 'scheduled', 'published']).default('published'), scheduledFor: z.coerce.date().nullable().optional(), accessibilityText: z.string().trim().max(500).default(''), contentWarning: z.string().trim().max(160).default(''), commentsDisabled: z.boolean().default(false), repostOf: z.string().optional(), quoteBody: z.string().trim().max(5000).default(''), poll: z.object({question:z.string().trim().min(1).max(240),options:z.array(z.object({label:z.string().trim().min(1).max(80)})).min(2).max(6),endsAt:z.coerce.date().optional()}).optional()}).refine(value => value.status === 'draft' || value.body.length > 0 || value.media.length > 0 || Boolean(value.repostOf) || Boolean(value.poll), 'A post needs text, media, or a poll.').refine(value => !value.isReel || (value.audience === 'public' && value.media.length === 1 && value.media[0].type === 'video'), 'A reel must be one public video.');
 const reactionInput = z.object({type: z.enum(['Like', 'Love', 'Haha', 'Wow', 'Sad', 'Angry'])});
 router.use(requireAuth);
 
 router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit ?? 12), 1), 50);
   const feed = z.enum(['for-you','following','friends','latest','trending','reels']).catch('for-you').parse(String(req.query.feed ?? 'for-you'));
+  const activePublisher=(await User.findById(req.userId).select('accountType'))?.accountType==='page'?'page':'personal';
   const hidden = await HiddenPost.find({userId:req.userId}).distinct('postId');
   const feedbackHidden = await RecommendationFeedback.find({userId:req.userId,type:'not-interested'}).distinct('postId');
   const blocked = await Block.find({blockerId:req.userId}).distinct('blockedId');
@@ -32,16 +34,16 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   }
   const query: any = {_id: {$nin: [...hidden, ...feedbackHidden]}, archived: {$ne: true}, $and: [{$or: [{status: 'published'}, {status: {$exists: false}}, {status: 'scheduled', scheduledFor: {$lte: new Date()}}]}, {$or: [{scheduledFor: {$exists: false}}, {scheduledFor: null}, {scheduledFor: {$lte: new Date()}}]}]};
   if (feed === 'reels') query.isReel = true;
-  const visibleAuthors = authorIds.filter(id => !snoozed.map(String).includes(String(id)) && !blocked.map(String).includes(String(id)));
+  const visibleAuthors = authorIds.filter(id => String(id)!==req.userId && !snoozed.map(String).includes(String(id)) && !blocked.map(String).includes(String(id)));
   const groupIds = await GroupMember.find({userId:req.userId,status:'active'}).distinct('groupId');
   if (feed === 'reels') {
     query.audience = 'public';
   } else if (feed === 'friends') {
-    query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId}];
+    query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId,publisherType:activePublisher}];
   } else if (feed === 'following') {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {audience:'friends',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {groupId:{$in:groupIds},audience:'public'}];
   } else {
-    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId}];
+    query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId,publisherType:activePublisher}];
   }
   if (snoozed.length) query.authorId = {$nin:snoozed};
   if (req.query.before) query.createdAt = {$lt: new Date(String(req.query.before))};
@@ -80,9 +82,12 @@ router.delete('/drafts/:id', asyncHandler(async (req: AuthRequest, res) => {
 router.get('/activity', asyncHandler(async (req: AuthRequest, res) => ok(res, await PostView.find({userId:req.userId}).sort({viewedAt:-1}).limit(100).populate({path:'postId',populate:{path:'authorId',select:'name username avatarUrl'}}))));
 router.post('/', asyncHandler(async (req: AuthRequest, res) => {
   const data = postInput.parse(req.body);
+  const owner=await User.findById(req.userId).select('accountType');
+  const publisherType=data.publisherType??(owner?.accountType==='page'?'page':'personal');
+  if(publisherType==='page'&&owner?.accountType!=='page') throw new HttpError(403,'Switch to your Page before publishing Page content.');
   if (data.scheduledFor && data.scheduledFor <= new Date()) throw new HttpError(400, 'Scheduled time must be in the future.');
   const status = data.status === 'draft' ? 'draft' : data.scheduledFor ? 'scheduled' : 'published';
-  return ok(res, await Post.create({...data, status, hashtags: data.hashtags.map(tag => tag.toLowerCase()), authorId: req.userId}), 201);
+  return ok(res, await Post.create({...data, publisherType, status, hashtags: data.hashtags.map(tag => tag.toLowerCase()), authorId: req.userId}), 201);
 }));
 router.patch('/:id', asyncHandler(async (req: AuthRequest, res) => {
   const data = postInput.parse(req.body);

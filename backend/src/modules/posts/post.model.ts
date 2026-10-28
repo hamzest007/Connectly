@@ -2,6 +2,7 @@ import {Schema, model} from 'mongoose';
 
 const postSchema = new Schema({
   authorId: {type: Schema.Types.ObjectId, ref: 'User', required: true, index: true},
+  publisherType: {type: String, enum: ['personal', 'page'], default: 'personal', index: true},
   groupId: {type: Schema.Types.ObjectId, ref: 'Group', default: null, index: true},
   body: {type: String, required: false, default: '', trim: true, maxlength: 5000},
   audience: {type: String, enum: ['public', 'friends', 'close-friends', 'private'], default: 'public'},

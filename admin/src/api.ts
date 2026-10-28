@@ -1,4 +1,4 @@
-export type AdminUser={_id:string;name:string;username:string;email:string;role:string;status:string;accountType?:'user'|'page';privateAccount?:boolean;isVerified:boolean;createdAt:string;suspensionReason?:string};
+export type AdminUser={_id:string;name:string;username:string;email:string;role:string;status:string;accountType?:'user'|'page';pageEnabled?:boolean;pageName?:string;pageUsername?:string;privateAccount?:boolean;isVerified:boolean;createdAt:string;suspensionReason?:string};
 export type Report={_id:string;targetType:string;targetId:string;reason:string;status:string;priority:string;createdAt:string;assignedTo?:{_id:string;name:string;username:string};reporterId?:{name:string;username:string;email:string}};
 const tokenKey='connectly-admin-access-token';
 export const getToken=()=>sessionStorage.getItem(tokenKey);

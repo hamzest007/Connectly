@@ -274,7 +274,7 @@ export function FeedScreen({
         </View>
         <View style={styles.headerActions}>
           <Pressable onPress={onOpenMessages} style={styles.chatButton} accessibilityLabel="Open messages">
-            <Text style={styles.chatIcon}>✉</Text>
+            <View style={styles.chatGlyph}><Text style={styles.chatDots}>•••</Text></View>
           </Pressable>
           <Pressable
             onPress={() =>
@@ -663,8 +663,9 @@ const styles = StyleSheet.create({
   },
   profileButton: { position: 'relative' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  chatButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadow },
-  chatIcon: { color: colors.blue, fontSize: 20, fontWeight: '900' },
+  chatButton: { width: 48, height: 48, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, ...shadow },
+  chatGlyph: { width: 28, height: 23, borderRadius: 10, backgroundColor: colors.blueSoft, alignItems: 'center', justifyContent: 'center', borderBottomLeftRadius: 4 },
+  chatDots: { color: colors.blue, fontSize: 13, fontWeight: '900', letterSpacing: 1 },
   onlineDot: {
     position: 'absolute',
     right: -1,

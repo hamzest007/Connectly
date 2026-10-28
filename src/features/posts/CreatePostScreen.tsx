@@ -27,7 +27,7 @@ export function CreatePostScreen({
   onClose: () => void;
   accessToken: string;
   onPublished: () => void;
-  user: { name: string; avatarUrl?: string };
+  user: { name: string; avatarUrl?: string; accountType?: 'user' | 'page' };
 }) {
   const [mode, setMode] = useState<Mode>('post');
   const [text, setText] = useState('');
@@ -101,6 +101,7 @@ export function CreatePostScreen({
             isReel: mode === 'reel',
             status: 'draft',
             accessibilityText,
+            publisherType: user.accountType === 'page' ? 'page' : 'personal',
           }),
         },
         accessToken,
@@ -135,6 +136,7 @@ export function CreatePostScreen({
         status: scheduledFor ? 'scheduled' : 'published',
         scheduledFor: scheduledFor?.toISOString() ?? null,
         accessibilityText,
+        publisherType: user.accountType === 'page' ? 'page' : 'personal',
       };
       if (mode === 'story')
         await apiRequest(
