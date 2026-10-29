@@ -19,6 +19,7 @@ import { colors, radius, shadow, spacing } from '../../theme/tokens';
 import { pickMedia, uploadMedia } from '../../services/media/cloudinary';
 import { PostCard } from '../../components/posts/PostCard';
 import { Post } from '../../types/social';
+import { ActionModal } from '../../components/common/ActionModal';
 
 type ProfileData = {
   _id: string;
@@ -103,6 +104,7 @@ export function ProfileScreen({
   const [editing, setEditing] = React.useState(false);
   const [profileSetupVisible, setProfileSetupVisible] = React.useState(false);
   const [pageModalVisible, setPageModalVisible] = React.useState(false);
+  const [profileActionsVisible, setProfileActionsVisible] = React.useState(false);
   const [pageName, setPageName] = React.useState('');
   const [pageUsername, setPageUsername] = React.useState('');
   const [pageBio, setPageBio] = React.useState('');
@@ -447,27 +449,25 @@ export function ProfileScreen({
           onPress={
             isSelf
               ? onSettings
-              : () =>
-                  Alert.alert('Profile actions', 'Choose an action', [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Report profile', onPress: () => void reportProfile() },
-                    { text: 'Mute', onPress: () => safetyAction('mute') },
-                    {
-                      text: 'Restrict',
-                      onPress: () => safetyAction('restrict'),
-                    },
-                    {
-                      text: 'Block',
-                      style: 'destructive',
-                      onPress: () => safetyAction('block'),
-                    },
-                  ])
+              : () => setProfileActionsVisible(true)
           }
           style={styles.circle}
         >
           <Text style={styles.settingsIcon}>{isSelf ? '⚙' : '•••'}</Text>
         </Pressable>
       </View>
+      <ActionModal
+        visible={profileActionsVisible}
+        title="Profile actions"
+        subtitle={`Choose how you want to manage @${profile.username}`}
+        onClose={() => setProfileActionsVisible(false)}
+        actions={[
+          { label: 'Report profile', icon: '⚑', onPress: () => void reportProfile() },
+          { label: 'Mute', icon: '◌', onPress: () => safetyAction('mute') },
+          { label: 'Restrict', icon: '⊘', onPress: () => safetyAction('restrict') },
+          { label: 'Block', icon: '!', destructive: true, onPress: () => safetyAction('block') },
+        ]}
+      />
       <Pressable
         style={styles.cover}
         onPress={isSelf ? () => void changeCover() : undefined}

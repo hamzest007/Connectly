@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -46,12 +47,16 @@ export function SettingsDetailScreen({
   const [following, setFollowing] = React.useState<any[]>([]);
   const [closeFriends, setCloseFriends] = React.useState<Set<string>>(new Set());
   const [monetization, setMonetization] = React.useState<any>(null);
+  const [monetizationSaving, setMonetizationSaving] = React.useState(false);
   const [studio, setStudio] = React.useState<any>(null);
   const [privacyAccount, setPrivacyAccount] = React.useState(false);
   const [recommendationPreferences, setRecommendationPreferences] = React.useState<any>(null);
   const [keyword, setKeyword] = React.useState('');
   const [collections, setCollections] = React.useState<any[]>([]);
   const [collectionName, setCollectionName] = React.useState('');
+  const [archivedPosts, setArchivedPosts] = React.useState<any[]>([]);
+  const [archivedStories, setArchivedStories] = React.useState<any[]>([]);
+  const [reportText, setReportText] = React.useState('');
   const labels: { [key in Kind]: [string, string] } = {
     activity: ['Your activity', 'Review your recent account activity.'],
     privacy: [
@@ -115,7 +120,17 @@ export function SettingsDetailScreen({
         }
         if (kind === 'content') setRecommendationPreferences(await apiRequest<any>('/users/me/recommendation-preferences', {}, accessToken));
         if (kind === 'collections') setCollections(await apiRequest<any[]>('/posts/collections', {}, accessToken));
+        if (kind === 'archive') {
+          const [posts, stories] = await Promise.all([
+            apiRequest<any[]>('/posts/archived', {}, accessToken),
+            apiRequest<any[]>('/stories/archived', {}, accessToken),
+          ]);
+          setArchivedPosts(posts);
+          setArchivedStories(stories);
+        }
       } catch {
+        if (kind === 'monetization') setMonetization({enabled:false,tipsEnabled:false,subscriptionsEnabled:false,virtualGiftsEnabled:false,payoutEmail:''});
+        if (kind === 'creator') setStudio({summary:{posts:0,views:0,reach:0,likes:0,comments:0,shares:0,watchTimeSeconds:0},followers:0,topPosts:[],scheduled:[],drafts:[],mediaLibrary:[],collaborationRequests:[]});
       } finally {
         setLoading(false);
       }
@@ -134,6 +149,55 @@ export function SettingsDetailScreen({
         'Unable to update',
         e instanceof Error ? e.message : 'Please try again.',
       );
+    }
+  };
+  const updateMonetization = async (patch: Record<string, unknown>) => {
+    setMonetizationSaving(true);
+    try {
+      const next = await apiRequest<any>('/users/me/monetization', {method:'PATCH', body:JSON.stringify(patch)}, accessToken);
+      setMonetization(next);
+    } catch (e) {
+      Alert.alert('Unable to save monetization settings', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setMonetizationSaving(false);
+    }
+  };
+  const updateCollaboration = async (id: string, status: 'accepted' | 'declined') => {
+    try {
+      await apiRequest(`/users/me/collaboration-requests/${id}`, {method:'PATCH', body:JSON.stringify({status})}, accessToken);
+      setStudio((current: any) => current ? {...current, collaborationRequests:(current.collaborationRequests||[]).map((item:any)=>item._id===id?{...item,status}:item)} : current);
+    } catch (e) {
+      Alert.alert('Unable to update request', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+  const updateRecommendationPreferences = async (patch: Record<string, unknown>) => {
+    try {
+      setRecommendationPreferences((current: any) => ({...current, ...patch}));
+      const value = await apiRequest<any>('/users/me/recommendation-preferences', {method:'PATCH', body:JSON.stringify(patch)}, accessToken);
+      setRecommendationPreferences(value);
+    } catch (e) {
+      Alert.alert('Unable to update content preferences', e instanceof Error ? e.message : 'Please try again.');
+      const value = await apiRequest<any>('/users/me/recommendation-preferences', {}, accessToken).catch(() => null);
+      if (value) setRecommendationPreferences(value);
+    }
+  };
+  const createCollection = async () => {
+    const name = collectionName.trim();
+    if (!name) return;
+    try {
+      const created = await apiRequest<any>('/posts/collections', {method:'POST', body:JSON.stringify({name})}, accessToken);
+      setCollections(value => [created, ...value]);
+      setCollectionName('');
+    } catch (e) {
+      Alert.alert('Unable to create collection', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+  const deleteCollection = async (id: string) => {
+    try {
+      await apiRequest(`/posts/collections/${id}`, {method:'DELETE'}, accessToken);
+      setCollections(value => value.filter(item => item._id !== id));
+    } catch (e) {
+      Alert.alert('Unable to delete collection', e instanceof Error ? e.message : 'Please try again.');
     }
   };
   const action = async (label: string) => {
@@ -206,7 +270,7 @@ export function SettingsDetailScreen({
       );
   };
   return (
-    <View style={styles.page}>
+    <ScrollView style={styles.page} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
         <Pressable onPress={onBack} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
@@ -261,13 +325,13 @@ export function SettingsDetailScreen({
           )}
         </View>
       ) : kind === 'collections' ? (
-        <View><Text style={styles.sectionHint}>Collections are private folders for posts you save.</Text><View style={styles.collectionCreate}><TextInput value={collectionName} onChangeText={setCollectionName} placeholder="New collection name" placeholderTextColor={colors.muted} style={styles.collectionInput}/><Pressable onPress={async()=>{if(!collectionName.trim())return;const created=await apiRequest<any>('/posts/collections',{method:'POST',body:JSON.stringify({name:collectionName.trim()})},accessToken);setCollections(value=>[created,...value]);setCollectionName('');}}><Text style={styles.actionText}>Create</Text></Pressable></View>{collections.map(collection=><View style={styles.row} key={collection._id}><View style={styles.copy}><Text style={styles.rowTitle}>{collection.name}</Text><Text style={styles.rowMeta}>{collection.postIds?.length||0} saved posts</Text></View><Pressable onPress={async()=>{await apiRequest(`/posts/collections/${collection._id}`,{method:'DELETE'},accessToken);setCollections(value=>value.filter(item=>item._id!==collection._id));}}><Text style={styles.actionText}>Delete</Text></Pressable></View>)}{!collections.length?<Text style={styles.empty}>Create your first private collection.</Text>:null}</View>
+        <View><Text style={styles.sectionHint}>Collections are private folders for organizing saved posts. Create and manage your folders here.</Text><View style={styles.collectionCreate}><TextInput value={collectionName} onChangeText={setCollectionName} onSubmitEditing={() => void createCollection()} placeholder="New collection name" placeholderTextColor={colors.muted} style={styles.collectionInput}/><Pressable onPress={() => void createCollection()}><Text style={styles.actionText}>Create</Text></Pressable></View>{collections.map(collection=><View style={styles.row} key={collection._id}><View style={styles.copy}><Text style={styles.rowTitle}>{collection.name}</Text><Text style={styles.rowMeta}>{collection.postIds?.length||0} saved posts</Text></View><Pressable onPress={() => void deleteCollection(collection._id)}><Text style={styles.actionText}>Delete</Text></Pressable></View>)}{!collections.length?<Text style={styles.empty}>Create your first private collection.</Text>:null}</View>
       ) : kind === 'content' && recommendationPreferences ? (
         <View>
-          <Pressable style={styles.row} onPress={async () => { const value=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({chronological:!recommendationPreferences.chronological})},accessToken); setRecommendationPreferences(value); }}><View style={styles.copy}><Text style={styles.rowTitle}>Chronological feed</Text><Text style={styles.rowMeta}>Show the newest posts first</Text></View><View style={[styles.toggle,recommendationPreferences.chronological&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.chronological&&styles.thumbOn]}/></View></Pressable>
-          <Pressable style={styles.row} onPress={async () => { const value=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({showReasons:!recommendationPreferences.showReasons})},accessToken); setRecommendationPreferences(value); }}><View style={styles.copy}><Text style={styles.rowTitle}>Why posts are recommended</Text><Text style={styles.rowMeta}>Show explanations on suggested posts</Text></View><View style={[styles.toggle,recommendationPreferences.showReasons&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.showReasons&&styles.thumbOn]}/></View></Pressable>
-          <View style={styles.keywordBox}><Text style={styles.rowTitle}>Mute keywords</Text><Text style={styles.rowMeta}>Hide posts containing these words or phrases.</Text><View style={styles.keywordInputRow}><TextInput value={keyword} onChangeText={setKeyword} placeholder="Add a word or phrase" placeholderTextColor={colors.muted} style={styles.keywordInput}/><Pressable onPress={async()=>{if(!keyword.trim())return; const value=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({mutedKeywords:[...(recommendationPreferences.mutedKeywords||[]),keyword.trim()]})},accessToken); setRecommendationPreferences(value);setKeyword('');}}><Text style={styles.actionText}>Add</Text></Pressable></View>{(recommendationPreferences.mutedKeywords||[]).map((value:string)=><View style={styles.keywordPill} key={value}><Text style={styles.keywordText}>{value}</Text><Pressable onPress={async()=>{const updated=await apiRequest<any>('/users/me/recommendation-preferences',{method:'PATCH',body:JSON.stringify({mutedKeywords:(recommendationPreferences.mutedKeywords||[]).filter((item:string)=>item!==value)})},accessToken);setRecommendationPreferences(updated);}}><Text style={styles.keywordRemove}>×</Text></Pressable></View>)}</View>
-          <Pressable style={styles.primary} onPress={()=>Alert.alert('Reset personalized recommendations','This clears your feed preferences and muted keywords.',[{text:'Cancel',style:'cancel'},{text:'Reset',style:'destructive',onPress:async()=>{await apiRequest('/users/me/recommendation-preferences/reset',{method:'POST'},accessToken);setRecommendationPreferences({chronological:false,showReasons:true,mutedKeywords:[]});}}])}><Text style={styles.primaryText}>Reset personalized recommendations</Text></Pressable>
+          <Pressable style={styles.row} onPress={() => void updateRecommendationPreferences({chronological:!recommendationPreferences.chronological})}><View style={styles.copy}><Text style={styles.rowTitle}>Chronological feed</Text><Text style={styles.rowMeta}>Show the newest posts first</Text></View><View style={[styles.toggle,recommendationPreferences.chronological&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.chronological&&styles.thumbOn]}/></View></Pressable>
+          <Pressable style={styles.row} onPress={() => void updateRecommendationPreferences({showReasons:!recommendationPreferences.showReasons})}><View style={styles.copy}><Text style={styles.rowTitle}>Why posts are recommended</Text><Text style={styles.rowMeta}>Show explanations on suggested posts</Text></View><View style={[styles.toggle,recommendationPreferences.showReasons&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.showReasons&&styles.thumbOn]}/></View></Pressable>
+          <View style={styles.keywordBox}><Text style={styles.rowTitle}>Mute keywords</Text><Text style={styles.rowMeta}>Hide posts containing these words or phrases.</Text><View style={styles.keywordInputRow}><TextInput value={keyword} onChangeText={setKeyword} onSubmitEditing={() => { const value=keyword.trim(); if(value && !(recommendationPreferences.mutedKeywords||[]).includes(value)) { void updateRecommendationPreferences({mutedKeywords:[...(recommendationPreferences.mutedKeywords||[]),value]}); setKeyword(''); } }} placeholder="Add a word or phrase" placeholderTextColor={colors.muted} style={styles.keywordInput}/><Pressable onPress={() => { const value=keyword.trim(); if(value && !(recommendationPreferences.mutedKeywords||[]).includes(value)) { void updateRecommendationPreferences({mutedKeywords:[...(recommendationPreferences.mutedKeywords||[]),value]}); setKeyword(''); } }}><Text style={styles.actionText}>Add</Text></Pressable></View>{(recommendationPreferences.mutedKeywords||[]).map((value:string)=><View style={styles.keywordPill} key={value}><Text style={styles.keywordText}>{value}</Text><Pressable onPress={() => void updateRecommendationPreferences({mutedKeywords:(recommendationPreferences.mutedKeywords||[]).filter((item:string)=>item!==value)})}><Text style={styles.keywordRemove}>×</Text></Pressable></View>)}</View>
+          <Pressable style={styles.primary} onPress={()=>Alert.alert('Reset personalized recommendations','This clears your feed preferences and muted keywords.',[{text:'Cancel',style:'cancel'},{text:'Reset',style:'destructive',onPress:async()=>{try { await apiRequest('/users/me/recommendation-preferences/reset',{method:'POST'},accessToken); setRecommendationPreferences({chronological:false,showReasons:true,mutedKeywords:[]}); } catch (e) { Alert.alert('Unable to reset recommendations', e instanceof Error ? e.message : 'Please try again.'); }}}])}><Text style={styles.primaryText}>Reset personalized recommendations</Text></Pressable>
         </View>
       ) : kind === 'security' ? (
         <View>
@@ -305,19 +369,21 @@ export function SettingsDetailScreen({
         </View>
       ) : kind === 'close-friends' ? (
         <View>
+          <Text style={styles.sectionHint}>People you add here can receive posts and stories shared with the Close friends audience.</Text>
           {following.map(item => {
             const person = item.followingId;
             if (!person) return null;
             const selected = closeFriends.has(String(person._id));
-            return <Pressable style={styles.row} key={person._id} onPress={() => { const next = new Set(closeFriends); if (selected) { next.delete(String(person._id)); void apiRequest(`/users/me/close-friends/${person._id}`, {method:'DELETE'}, accessToken); } else { next.add(String(person._id)); void apiRequest(`/users/me/close-friends/${person._id}`, {method:'PUT'}, accessToken); } setCloseFriends(next); }}><View style={styles.copy}><Text style={styles.rowTitle}>{person.name}</Text><Text style={styles.rowMeta}>@{person.username}</Text></View><Text style={styles.actionText}>{selected ? 'Added' : 'Add'}</Text></Pressable>;
+            return <Pressable style={styles.row} key={person._id} onPress={async () => { const next = new Set(closeFriends); try { if (selected) { await apiRequest(`/users/me/close-friends/${person._id}`, {method:'DELETE'}, accessToken); next.delete(String(person._id)); } else { await apiRequest(`/users/me/close-friends/${person._id}`, {method:'PUT'}, accessToken); next.add(String(person._id)); } setCloseFriends(next); } catch (e) { Alert.alert('Unable to update close friends', e instanceof Error ? e.message : 'Please try again.'); } }}><View style={styles.copy}><Text style={styles.rowTitle}>{person.name}</Text><Text style={styles.rowMeta}>@{person.username}</Text></View><Text style={styles.actionText}>{selected ? 'Remove' : 'Add'}</Text></Pressable>;
           })}
           {!following.length ? <Text style={styles.empty}>Follow people first to add close friends.</Text> : null}
         </View>
       ) : kind === 'monetization' ? (
         <View>
           <Text style={styles.sectionHint}>Your settings are saved to your account and can be changed anytime.</Text>
-          {(['enabled','tipsEnabled','subscriptionsEnabled','virtualGiftsEnabled'] as const).map(key => <Pressable style={styles.row} key={key} onPress={() => { const next = {...monetization, [key]: !monetization?.[key]}; setMonetization(next); void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({[key]:next[key]})},accessToken); }}><View style={styles.copy}><Text style={styles.rowTitle}>{key === 'enabled' ? 'Enable monetization' : key === 'tipsEnabled' ? 'Accept tips' : key === 'subscriptionsEnabled' ? 'Offer subscriptions' : 'Accept virtual gifts'}</Text><Text style={styles.rowMeta}>{monetization?.[key] ? 'Enabled' : 'Disabled'}</Text></View><Text style={styles.actionText}>{monetization?.[key] ? 'On' : 'Off'}</Text></Pressable>)}
-          <TextInput value={monetization?.payoutEmail ?? ''} onChangeText={value => setMonetization({...monetization,payoutEmail:value})} onEndEditing={() => void apiRequest('/users/me/monetization',{method:'PATCH',body:JSON.stringify({payoutEmail:monetization?.payoutEmail ?? ''})},accessToken)} placeholder="Payout email" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" style={styles.input} />
+          {(['enabled','tipsEnabled','subscriptionsEnabled','virtualGiftsEnabled'] as const).map(key => <Pressable style={styles.row} key={key} disabled={monetizationSaving} onPress={() => void updateMonetization({[key]: !monetization?.[key]})}><View style={styles.copy}><Text style={styles.rowTitle}>{key === 'enabled' ? 'Enable monetization' : key === 'tipsEnabled' ? 'Accept tips' : key === 'subscriptionsEnabled' ? 'Offer subscriptions' : 'Accept virtual gifts'}</Text><Text style={styles.rowMeta}>{monetization?.[key] ? 'Enabled' : 'Disabled'}</Text></View><Text style={styles.actionText}>{monetizationSaving ? 'Saving…' : monetization?.[key] ? 'On' : 'Off'}</Text></Pressable>)}
+          <Text style={styles.inputLabel}>Payout email</Text>
+          <TextInput value={monetization?.payoutEmail ?? ''} onChangeText={value => setMonetization({...monetization,payoutEmail:value})} onEndEditing={() => void updateMonetization({payoutEmail:monetization?.payoutEmail ?? ''})} placeholder="creator@example.com" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" style={styles.input} />
         </View>
       ) : kind === 'creator' && studio ? (
         <View>
@@ -328,10 +394,64 @@ export function SettingsDetailScreen({
           <Text style={styles.studioSection}>Content calendar</Text>
           {(studio.scheduled||[]).map((post:any)=><View style={styles.row} key={post._id}><View style={styles.copy}><Text style={styles.rowTitle}>{post.body || 'Scheduled media'}</Text><Text style={styles.rowMeta}>{new Date(post.scheduledFor).toLocaleString()}</Text></View></View>)}
           <Text style={styles.studioSection}>Saved drafts & media library</Text><Text style={styles.sectionHint}>{studio.drafts?.length||0} drafts · {studio.mediaLibrary?.length||0} media items</Text>
-          {(studio.collaborationRequests||[]).map((request:any)=><View style={styles.row} key={request._id}><View style={styles.copy}><Text style={styles.rowTitle}>{request.brandName}</Text><Text style={styles.rowMeta}>{request.brief || 'Brand collaboration request'} · {request.status}</Text></View>{request.status==='pending'?<View style={styles.requestActions}><Pressable onPress={()=>void apiRequest(`/users/me/collaboration-requests/${request._id}`,{method:'PATCH',body:JSON.stringify({status:'accepted'})},accessToken).then(()=>setStudio({...studio,collaborationRequests:studio.collaborationRequests.map((item:any)=>item._id===request._id?{...item,status:'accepted'}:item)}))}><Text style={styles.actionText}>Accept</Text></Pressable><Pressable onPress={()=>void apiRequest(`/users/me/collaboration-requests/${request._id}`,{method:'PATCH',body:JSON.stringify({status:'declined'})},accessToken)}><Text style={styles.actionText}>Decline</Text></Pressable></View>:null}</View>)}
+          {(studio.collaborationRequests||[]).map((request:any)=><View style={styles.row} key={request._id}><View style={styles.copy}><Text style={styles.rowTitle}>{request.brandName}</Text><Text style={styles.rowMeta}>{request.brief || 'Brand collaboration request'} · {request.status}</Text></View>{request.status==='pending'?<View style={styles.requestActions}><Pressable onPress={()=>void updateCollaboration(request._id,'accepted')}><Text style={styles.actionText}>Accept</Text></Pressable><Pressable onPress={()=>void updateCollaboration(request._id,'declined')}><Text style={styles.actionText}>Decline</Text></Pressable></View>:null}</View>)}
+          {!(studio.collaborationRequests||[]).length ? <Text style={styles.empty}>No brand collaboration requests yet.</Text> : null}
+        </View>
+      ) : kind === 'archive' ? (
+        <View>
+          <Text style={styles.sectionHint}>Archived content is hidden from your profile and feeds until you restore it.</Text>
+          <Text style={styles.studioSection}>Posts</Text>
+          {archivedPosts.map(post => (
+            <View style={styles.row} key={post._id}>
+              <View style={styles.copy}>
+                <Text style={styles.rowTitle} numberOfLines={2}>{post.body || 'Media post'}</Text>
+                <Text style={styles.rowMeta}>{new Date(post.createdAt).toLocaleString()}</Text>
+              </View>
+              <Pressable onPress={async () => { await apiRequest(`/posts/${post._id}/archive`, {method: 'DELETE'}, accessToken); setArchivedPosts(value => value.filter(item => item._id !== post._id)); }}>
+                <Text style={styles.actionText}>Unarchive</Text>
+              </Pressable>
+            </View>
+          ))}
+          {!archivedPosts.length ? <Text style={styles.empty}>No archived posts.</Text> : null}
+          <Text style={styles.studioSection}>Stories</Text>
+          {archivedStories.map(story => (
+            <View style={styles.row} key={story._id}>
+              <View style={styles.copy}>
+                <Text style={styles.rowTitle} numberOfLines={2}>{story.body || 'Media story'}</Text>
+                <Text style={styles.rowMeta}>{new Date(story.createdAt).toLocaleString()}</Text>
+              </View>
+              <Pressable onPress={async () => { await apiRequest(`/stories/${story._id}/archive`, {method: 'DELETE'}, accessToken); setArchivedStories(value => value.filter(item => item._id !== story._id)); }}>
+                <Text style={styles.actionText}>Unarchive</Text>
+              </Pressable>
+            </View>
+          ))}
+          {!archivedStories.length ? <Text style={styles.empty}>No archived stories.</Text> : null}
+        </View>
+      ) : kind === 'support' ? (
+        <View>
+          <View style={styles.supportCard}>
+            <Text style={styles.rowTitle}>Help center</Text>
+            <Text style={styles.rowMeta}>Common answers for account, privacy, groups, posts, and notifications.</Text>
+            {['How do I change my privacy?', 'How do I manage a group?', 'How do I recover my account?'].map(question => (
+              <Pressable key={question} style={styles.supportQuestion} onPress={() => Alert.alert(question, question.includes('privacy') ? 'Open Privacy and security to change your account visibility and blocked accounts.' : question.includes('group') ? 'Open Groups and Pages to manage members, roles, approvals, posts, and group identity.' : 'Use Security and login to review sessions, then contact support if you still need help.')}>
+                <Text style={styles.rowMeta}>{question}</Text><Text style={styles.chevron}>›</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.supportCard}>
+            <Text style={styles.rowTitle}>Report a problem</Text>
+            <Text style={styles.rowMeta}>Tell us what went wrong and our team can investigate it.</Text>
+            <TextInput value={reportText} onChangeText={setReportText} multiline placeholder="Describe the problem" placeholderTextColor={colors.muted} style={styles.reportInput} />
+            <Pressable style={styles.primary} disabled={!reportText.trim()} onPress={async () => { try { await apiRequest('/reports', {method: 'POST', body: JSON.stringify({targetType: 'platform', reason: reportText.trim()})}, accessToken); setReportText(''); Alert.alert('Report submitted', 'Thanks. Your report has been sent to the Connectly team.'); } catch (e) { Alert.alert('Unable to submit report', e instanceof Error ? e.message : 'Please try again.'); } }}><Text style={styles.primaryText}>Submit report</Text></Pressable>
+          </View>
+          <View style={styles.supportCard}>
+            <Text style={styles.rowTitle}>Community guidelines</Text>
+            <Text style={styles.rowMeta}>Be respectful, protect personal information, avoid harassment, and only share content you have the right to publish. Repeated violations may result in content removal or account restrictions.</Text>
+          </View>
         </View>
       ) : kind === 'activity' ? (
         <View>
+          <Text style={styles.sectionHint}>Your recent post viewing activity is shown here. Likes, comments, follows, and account changes remain available in Notifications and Your profile.</Text>
           {items.map(item => (
             <View style={styles.row} key={item._id}>
               <View style={styles.copy}>
@@ -346,6 +466,7 @@ export function SettingsDetailScreen({
               </View>
             </View>
           ))}
+          {!items.length ? <Text style={styles.empty}>No recent activity yet. Open a post to start building your activity history.</Text> : null}
         </View>
       ) : (
         <View>
@@ -353,14 +474,10 @@ export function SettingsDetailScreen({
             ? ['Export my data', 'Clear search history']
             : kind === 'account'
             ? ['Deactivate account', 'Delete account']
-            : kind === 'support'
-            ? ['Help center', 'Report a problem', 'Community guidelines']
             : kind === 'content'
             ? ['Hidden words', 'Sensitive content', 'Muted topics']
             : kind === 'accessibility'
             ? ['Captions', 'Text size', 'Reduced motion']
-            : kind === 'archive'
-            ? ['Archived posts', 'Archived stories']
             : ['Password', 'Two-factor authentication']
           ).map(label => (
             <Pressable
@@ -377,11 +494,12 @@ export function SettingsDetailScreen({
           ))}
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.canvas, padding: spacing.md },
+  page: { flex: 1, backgroundColor: colors.canvas, paddingHorizontal: spacing.md },
+  content: { paddingTop: spacing.md, paddingBottom: 120 },
   header: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
   back: {
     width: 44,
@@ -435,6 +553,7 @@ const styles = StyleSheet.create({
   metricValue: { fontSize: 20, fontWeight: '900', color: colors.blue },
   chevron: { fontSize: 28, color: colors.muted },
   actionText: { fontSize: 12, color: colors.blue, fontWeight: '900' },
+  inputLabel: { color: colors.ink, fontSize: 12, fontWeight: '900', marginTop: spacing.md },
   toggle: {
     width: 48,
     height: 28,
@@ -459,6 +578,9 @@ const styles = StyleSheet.create({
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   metricCard: { width: '31%', minHeight: 76, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.sm },
   requestActions: { gap: spacing.sm },
+  supportCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md, ...shadow },
+  supportQuestion: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.borderLight, paddingVertical: spacing.md, marginTop: spacing.sm },
+  reportInput: { minHeight: 100, textAlignVertical: 'top', backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, color: colors.ink, marginTop: spacing.md },
   keywordBox: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   keywordInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
   keywordInput: { flex: 1, color: colors.ink, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.sm, marginRight: spacing.md },

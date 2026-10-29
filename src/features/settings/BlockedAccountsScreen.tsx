@@ -22,9 +22,11 @@ type BlockedUser = {
 export function BlockedAccountsScreen({
   accessToken,
   onBack,
+  onFindPeople,
 }: {
   accessToken: string;
   onBack: () => void;
+  onFindPeople?: () => void;
 }) {
   const [items, setItems] = React.useState<BlockedUser[]>([]);
   const [query, setQuery] = React.useState('');
@@ -101,6 +103,13 @@ export function BlockedAccountsScreen({
           data={visible}
           keyExtractor={item => item._id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            items.length > 0 ? (
+              <Text style={styles.count}>
+                {items.length} {items.length === 1 ? 'blocked account' : 'blocked accounts'}
+              </Text>
+            ) : undefined
+          }
           renderItem={({ item }) => (
             <View style={styles.row}>
               <Avatar
@@ -131,13 +140,22 @@ export function BlockedAccountsScreen({
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>✓</Text>
               <Text style={styles.emptyTitle}>
-                {query ? 'No matching accounts' : 'No blocked accounts'}
+                {query ? 'No matching blocked accounts' : 'No blocked accounts yet'}
               </Text>
               <Text style={styles.emptyText}>
                 {query
-                  ? 'Try another name or username.'
+                  ? 'Try another name or username, or clear your search.'
                   : 'Accounts you block will appear here.'}
               </Text>
+              {query ? (
+                <Pressable style={styles.emptyAction} onPress={() => setQuery('')}>
+                  <Text style={styles.emptyActionText}>Clear search</Text>
+                </Pressable>
+              ) : onFindPeople ? (
+                <Pressable style={styles.emptyAction} onPress={onFindPeople}>
+                  <Text style={styles.emptyActionText}>Find people</Text>
+                </Pressable>
+              ) : null}
             </View>
           }
         />
@@ -196,6 +214,12 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontSize: 12, marginTop: spacing.sm },
   loader: { marginTop: spacing.xl },
   list: { paddingTop: spacing.md, paddingBottom: 120 },
+  count: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: spacing.sm,
+  },
   row: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -241,4 +265,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     textAlign: 'center',
   },
+  emptyAction: {
+    backgroundColor: colors.blue,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  emptyActionText: { color: colors.surface, fontSize: 12, fontWeight: '900' },
 });

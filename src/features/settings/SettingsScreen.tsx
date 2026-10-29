@@ -13,6 +13,7 @@ const darkColors = colors;
 type Props = {
   onProfile: () => void;
   onFriends: () => void;
+  onFindPeople: () => void;
   onSaved: () => void;
   onMessages: () => void;
   onBlocked: () => void;
@@ -71,6 +72,7 @@ const privacy: MenuItem[] = [
 export function SettingsScreen({
   onProfile,
   onFriends,
+  onFindPeople,
   onSaved,
   onMessages,
   onBlocked,
@@ -156,7 +158,7 @@ export function SettingsScreen({
       </Pressable>
       <Pressable
         style={({ pressed }) => [styles.findPeople, pressed && styles.pressed]}
-        onPress={onFriends}
+        onPress={onFindPeople}
       >
         <View style={styles.findIcon}>
           <Text style={styles.rowIconText}>♧</Text>

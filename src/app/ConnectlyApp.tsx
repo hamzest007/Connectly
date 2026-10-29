@@ -37,8 +37,8 @@ const tabs: { key: Tab; icon: string; label: string }[] = [
   { key: 'home', icon: '⌂', label: 'Home' },
   { key: 'reels', icon: '◉', label: 'Reels' },
   { key: 'create', icon: '+', label: 'Create' },
-  { key: 'notifications', icon: '♢', label: 'Notifications' },
-  { key: 'menu', icon: '≡', label: 'Menu' },
+  { key: 'notifications', icon: '◇', label: 'Notifications' },
+  { key: 'menu', icon: '☰', label: 'Menu' },
 ];
 
 export function ConnectlyApp() {
@@ -235,6 +235,7 @@ export function ConnectlyApp() {
         <BlockedAccountsScreen
           accessToken={session.accessToken}
           onBack={() => setScreen(blockedReturn === 'settings' ? 'settings' : 'main')}
+          onFindPeople={() => { setSearchQuery(''); setScreen('search'); }}
         />
       </SafeAreaView>
     );
@@ -344,6 +345,7 @@ export function ConnectlyApp() {
           setTab('home');
         }}
         onFriends={() => { setFriendRequestsReturnTab('menu'); setScreen('friend-requests'); }}
+        onFindPeople={() => { setSearchQuery(''); setScreen('search'); }}
         onSaved={openSaved}
         onMessages={() => { setMessageReturnTab('menu'); setScreen('messages'); }}
         onBlocked={() => { setBlockedReturn('main'); setScreen('blocked'); setTab('menu'); }}
@@ -391,9 +393,11 @@ export function ConnectlyApp() {
             <Pressable
               key={item.key}
               onPress={() => setTab(item.key)}
-              style={[styles.navItem, tab === item.key && styles.navItemActive]}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+              style={({pressed}) => [styles.navItem, tab === item.key && styles.navItemActive, item.key === 'create' && styles.navCreateItem, pressed && styles.navItemPressed]}
             >
-              <View>
+              <View style={styles.iconWrap}>
                 {item.key === 'create' ? <View style={styles.createIcon}><Text style={styles.createIconText}>+</Text></View> : <Text style={[styles.icon, tab === item.key && styles.active]}>{item.icon}</Text>}
                 {item.key === 'notifications' && unreadNotifications > 0 ? (
                   <View style={styles.badge}>
@@ -444,7 +448,7 @@ const styles = StyleSheet.create({
     left: 14,
     right: 14,
     bottom: 14,
-    height: 82,
+    height: 88,
     backgroundColor: colors.surface,
     borderRadius: 27,
     borderWidth: 1,
@@ -452,7 +456,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     shadowColor: '#27305F',
     shadowOpacity: 0.14,
     shadowRadius: 26,
@@ -462,14 +466,19 @@ const styles = StyleSheet.create({
   navItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 62,
-    height: 64,
-    borderRadius: 20,
+    flex: 1,
+    minWidth: 60,
+    height: 70,
+    borderRadius: 22,
+    marginHorizontal: 2,
   },
   navItemActive: { backgroundColor: colors.blueSoft },
-  icon: { fontSize: 22, color: colors.muted, height: 28, lineHeight: 27 },
-  createIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', marginBottom: 2, shadowColor: colors.blue, shadowOpacity: .3, shadowRadius: 9, shadowOffset: {width: 0, height: 4}, elevation: 5 },
-  createIconText: { color: '#fff', fontSize: 27, fontWeight: '400', lineHeight: 31 },
+  navCreateItem: { marginTop: -12 },
+  navItemPressed: { opacity: 0.72, transform: [{scale: 0.96}] },
+  iconWrap: { alignItems: 'center', justifyContent: 'center', minHeight: 38 },
+  icon: { fontSize: 23, color: colors.muted, height: 29, lineHeight: 28, fontWeight: '500' },
+  createIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', marginBottom: 3, borderWidth: 4, borderColor: colors.canvas, shadowColor: colors.blue, shadowOpacity: .36, shadowRadius: 12, shadowOffset: {width: 0, height: 6}, elevation: 8 },
+  createIconText: { color: '#fff', fontSize: 32, fontWeight: '300', lineHeight: 35 },
   label: {
     fontSize: 10,
     color: colors.muted,
@@ -477,7 +486,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   active: { color: colors.blue },
-  createLabel: { color: colors.inkLight },
+  createLabel: { color: colors.ink, fontWeight: '900' },
   badge: {
     position: 'absolute',
     right: -10,

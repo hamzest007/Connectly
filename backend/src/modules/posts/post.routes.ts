@@ -85,6 +85,9 @@ router.delete('/collections/:collectionId', asyncHandler(async(req:AuthRequest,r
 router.get('/drafts', asyncHandler(async (req: AuthRequest, res) => {
   return ok(res, await Post.find({authorId: req.userId, status: 'draft'}).sort({updatedAt: -1}).limit(50));
 }));
+router.get('/archived', asyncHandler(async (req: AuthRequest, res) => {
+  return ok(res, await Post.find({authorId: req.userId, archived: true}).sort({updatedAt: -1}).limit(100).populate('authorId', 'name username avatarUrl'));
+}));
 router.post('/drafts/autosave', asyncHandler(async (req: AuthRequest, res) => {
   const data = postInput.parse({...req.body, status:'draft'});
   const owner=await User.findById(req.userId).select('accountType');
