@@ -340,6 +340,7 @@ export function ConnectlyApp() {
       />
     ) : tab === 'menu' ? (
       <SettingsScreen
+        user={session.user}
         onBack={() => {
           setFeedMode('for-you');
           setTab('home');
@@ -350,6 +351,7 @@ export function ConnectlyApp() {
         onMessages={() => { setMessageReturnTab('menu'); setScreen('messages'); }}
         onBlocked={() => { setBlockedReturn('main'); setScreen('blocked'); setTab('menu'); }}
         onGroups={() => setScreen('groups')}
+        onReels={() => setTab('reels')}
         onDetail={kind => {
           setSettingsReturnTab('menu');
           setSettingsKind(kind);

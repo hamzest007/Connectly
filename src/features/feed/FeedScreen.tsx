@@ -36,6 +36,7 @@ type FeedMode =
 type ApiPost = {
   _id: string;
   body: string;
+  audience?: Post['audience']; location?: string; hashtags?: string[]; accessibilityText?: string;
   createdAt: string;
   reactionCount: number;
   commentCount: number;
@@ -45,6 +46,8 @@ type ApiPost = {
   viewerSaved?: boolean;
   recommendationReason?: string;
   contentWarning?: string;
+  poll?: { question?: string; options?: { _id: string; label: string; votes?: number }[]; endsAt?: string };
+  interactive?: Post['interactive'];
   groupId?: { _id: string; name: string; visibility?: string; coverUrl?: string; memberCount?: number } | null;
   media?: Post['media'];
   repostOf?: { _id: string; body: string; createdAt: string; media?: Post['media']; authorId: { _id: string; name: string; username: string; avatarUrl?: string } | null } | null;
@@ -62,6 +65,11 @@ type Story = {
   body?: string;
   media: { url: string; type: 'image' | 'video' }[];
 };
+function FeedSkeleton() {
+  return <View accessibilityLabel="Loading feed" style={styles.skeletonWrap}>
+    {[0, 1, 2].map(item => <View key={item} style={styles.skeletonCard}><View style={styles.skeletonHeader}><View style={styles.skeletonAvatar} /><View style={styles.skeletonLines}><View style={styles.skeletonLineShort} /><View style={styles.skeletonLineLong} /></View></View><View style={styles.skeletonBody} /></View>)}
+  </View>;
+}
 const modes: { key: FeedMode; label: string }[] = [
   { key: 'for-you', label: 'For you' },
   { key: 'following', label: 'Following' },
@@ -143,7 +151,9 @@ export function FeedScreen({
       pinned: item.pinned,
       recommendationReason: item.recommendationReason,
       contentWarning: item.contentWarning,
-      group: item.groupId ? {id: item.groupId._id, name: item.groupId.name, visibility: item.groupId.visibility, coverUrl: item.groupId.coverUrl, memberCount: item.groupId.memberCount} : undefined,
+      audience: item.audience, location: item.location, hashtags: item.hashtags, accessibilityText: item.accessibilityText, interactive: item.interactive,
+      poll: item.poll?.question && item.poll.options?.length ? { question: item.poll.question, options: item.poll.options.map(option => ({ _id: option._id, label: option.label, votes: option.votes ?? 0 })), endsAt: item.poll.endsAt } : undefined,
+      group: item.groupId && typeof item.groupId === 'object' && item.groupId.name ? {id: item.groupId._id, name: item.groupId.name, visibility: item.groupId.visibility, coverUrl: item.groupId.coverUrl, memberCount: item.groupId.memberCount} : undefined,
       viewerReaction: item.viewerReaction ?? undefined,
       viewerSaved: item.viewerSaved,
       media: item.media,
@@ -521,7 +531,7 @@ export function FeedScreen({
               <Pressable onPress={() => void load(true)}>
                 <Text style={styles.retry}>Try again</Text>
               </Pressable>
-            ) : null}
+            ) : loading ? <FeedSkeleton /> : null}
           </View>
         }
       />
@@ -632,6 +642,14 @@ export function FeedScreen({
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.canvas },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 120 },
+  skeletonWrap: { width: '100%', marginTop: spacing.md },
+  skeletonCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  skeletonHeader: { flexDirection: 'row', alignItems: 'center' },
+  skeletonAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceAlt },
+  skeletonLines: { flex: 1, marginLeft: spacing.sm },
+  skeletonLineShort: { width: '38%', height: 10, borderRadius: 5, backgroundColor: colors.surfaceAlt },
+  skeletonLineLong: { width: '64%', height: 8, borderRadius: 4, backgroundColor: colors.surfaceAlt, marginTop: 8 },
+  skeletonBody: { height: 140, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt, marginTop: spacing.md },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

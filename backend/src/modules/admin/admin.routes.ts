@@ -36,13 +36,13 @@ router.get('/analytics', asyncHandler(async(_req,res)=>{
   return ok(res,{dailyActiveUsers,newUsers,content,topCreators});
 }));
 
-router.get('/users', asyncHandler(async(req,res)=>{
+router.get('/users', requirePermission('manage_users'), asyncHandler(async(req,res)=>{
   const limit=Math.min(Math.max(Number(req.query.limit??25),1),100); const page=Math.max(Number(req.query.page??1),1); const q=String(req.query.q??'').trim(); const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{username:{$regex:q,$options:'i'}},{email:{$regex:q,$options:'i'}}]}:{};
   const [items,total]=await Promise.all([User.find(filter).select('name username email role status accountType pageEnabled pageName pageUsername privateAccount isVerified createdAt suspendedUntil suspensionReason').sort({createdAt:-1}).skip((page-1)*limit).limit(limit),User.countDocuments(filter)]);
   return ok(res,{items,page,limit,total,totalPages:Math.ceil(total/limit)});
 }));
 
-router.get('/content', asyncHandler(async(req,res)=>{
+router.get('/content', requirePermission('moderate_content'), asyncHandler(async(req,res)=>{
   const type=z.enum(['all','posts','reels','stories','listings']).catch('all').parse(String(req.query.type??'all'));
   const limit=Math.min(Math.max(Number(req.query.limit??50),1),100); const items:any[]=[];
   if(type==='all'||type==='posts'||type==='reels'){const filter:any={status:'published',isReel:type==='reels'?true:type==='posts'?false:{$in:[true,false]}}; const posts=await Post.find(filter).sort({createdAt:-1}).limit(limit).populate('authorId','name username'); items.push(...posts.map(item=>({...item.toObject(),contentType:item.isReel?'reel':'post'})));}
@@ -51,21 +51,21 @@ router.get('/content', asyncHandler(async(req,res)=>{
   return ok(res,items.sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()).slice(0,limit));
 }));
 
-router.delete('/content/:type/:id', asyncHandler(async(req:AuthRequest,res)=>{const type=z.enum(['post','story','listing']).parse(String(req.params.type)); const id=String(req.params.id); let deleted=false;
+router.delete('/content/:type/:id', requirePermission('moderate_content'), asyncHandler(async(req:AuthRequest,res)=>{const type=z.enum(['post','story','listing']).parse(String(req.params.type)); const id=String(req.params.id); let deleted=false;
   if(type==='post') deleted=(await Post.findByIdAndDelete(id))!==null;
   if(type==='story') deleted=(await Story.findByIdAndUpdate(id,{archived:true}))!==null;
   if(type==='listing') deleted=(await Listing.findByIdAndUpdate(id,{status:'archived'}))!==null;
   if(!deleted)throw new HttpError(404,'Content not found.'); await audit(req,'remove_content',type,id); return ok(res,{deleted:true});
 }));
 
-router.get('/groups', asyncHandler(async(req,res)=>{
+router.get('/groups', requirePermission('moderate_content'), asyncHandler(async(req,res)=>{
   const q=String(req.query.q??'').trim(); const limit=Math.min(Math.max(Number(req.query.limit??50),1),100);
   const filter:any=q?{$or:[{name:{$regex:q,$options:'i'}},{description:{$regex:q,$options:'i'}}]}:{};
   const groups=await Group.find(filter).sort({createdAt:-1}).limit(limit).populate('createdBy','name username');
   const items=await Promise.all(groups.map(async group=>({...(group.toObject()),posts:await Post.countDocuments({groupId:group._id,status:'published'}),activeMembers:await GroupMember.countDocuments({groupId:group._id,status:'active'})})));
   return ok(res,items);
 }));
-router.patch('/groups/:id', asyncHandler(async(req:AuthRequest,res)=>{
+router.patch('/groups/:id', requirePermission('moderate_content'), asyncHandler(async(req:AuthRequest,res)=>{
   const data=z.object({name:z.string().trim().min(2).max(100).optional(),visibility:z.enum(['public','private','invite-only']).optional(),description:z.string().trim().max(1000).optional(),joinApprovalRequired:z.boolean().optional(),postApprovalRequired:z.boolean().optional()}).parse(req.body);
   const group=await Group.findByIdAndUpdate(req.params.id,data,{new:true,runValidators:true}).populate('createdBy','name username');
   if(!group)throw new HttpError(404,'Group not found.'); await audit(req,'update_group','group',String(group._id),data); return ok(res,group);
@@ -91,16 +91,16 @@ router.patch('/users/:id/profile-settings', requirePermission('manage_users'), a
   return ok(res,user);
 }));
 
-router.get('/reports', asyncHandler(async(req,res)=>{const status=z.enum(['all','open','reviewing','resolved','dismissed']).catch('all').parse(String(req.query.status??'all')); const filter=status==='all'?{}:{status}; const reports=await Report.find(filter).sort({priority:-1,createdAt:1}).limit(100).populate('reporterId','name username email').populate('assignedTo','name username'); return ok(res,reports);}));
+router.get('/reports', requirePermission('manage_reports'), asyncHandler(async(req,res)=>{const status=z.enum(['all','open','reviewing','resolved','dismissed']).catch('all').parse(String(req.query.status??'all')); const filter=status==='all'?{}:{status}; const reports=await Report.find(filter).sort({priority:-1,createdAt:1}).limit(100).populate('reporterId','name username email').populate('assignedTo','name username'); return ok(res,reports);}));
 
-router.patch('/reports/:id', asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({status:z.enum(['reviewing','resolved','dismissed']).optional(),priority:z.enum(['low','normal','high','urgent']).optional(),assignedTo:z.string().nullable().optional(),decisionNote:z.string().max(1000).optional(),removeTarget:z.boolean().default(false)}).parse(req.body); const id=String(req.params.id); const update:any={}; for(const key of ['status','priority','decisionNote','assignedTo'] as const) if(data[key]!==undefined) update[key]=data[key]; const report=await Report.findByIdAndUpdate(id,update,{new:true}).populate('assignedTo','name username'); if(!report)throw new HttpError(404,'Report not found.'); if(data.removeTarget && (report.targetType==='post'||report.targetType==='reel')) await Post.findByIdAndDelete(report.targetId); if(data.removeTarget && report.targetType==='comment') await Comment.findByIdAndDelete(report.targetId); if(data.removeTarget && (report.targetType==='user'||report.targetType==='page')) await User.findByIdAndUpdate(report.targetId,{status:'suspended',suspensionReason:'Removed after moderation review',suspendedUntil:new Date(Date.now()+30*86400000)}); await audit(req,'review_report','report',id,{...data}); return ok(res,report);}));
+router.patch('/reports/:id', requirePermission('manage_reports'), asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({status:z.enum(['reviewing','resolved','dismissed']).optional(),priority:z.enum(['low','normal','high','urgent']).optional(),assignedTo:z.string().nullable().optional(),decisionNote:z.string().max(1000).optional(),removeTarget:z.boolean().default(false)}).parse(req.body); const id=String(req.params.id); const update:any={}; for(const key of ['status','priority','decisionNote','assignedTo'] as const) if(data[key]!==undefined) update[key]=data[key]; const report=await Report.findByIdAndUpdate(id,update,{new:true}).populate('assignedTo','name username'); if(!report)throw new HttpError(404,'Report not found.'); if(data.removeTarget && (report.targetType==='post'||report.targetType==='reel')) await Post.findByIdAndDelete(report.targetId); if(data.removeTarget && report.targetType==='comment') await Comment.findByIdAndDelete(report.targetId); if(data.removeTarget && (report.targetType==='user'||report.targetType==='page')) await User.findByIdAndUpdate(report.targetId,{status:'suspended',suspensionReason:'Removed after moderation review',suspendedUntil:new Date(Date.now()+30*86400000)}); await audit(req,'review_report','report',id,{...data}); return ok(res,report);}));
 
-router.get('/verification', asyncHandler(async(req,res)=>ok(res,await VerificationRequest.find({status:String(req.query.status??'pending')}).sort({createdAt:1}).limit(100).populate('userId','name username email avatarUrl isVerified'))));
-router.patch('/verification/:id', asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({status:z.enum(['approved','rejected'])}).parse(req.body); const id=String(req.params.id); const item=await VerificationRequest.findByIdAndUpdate(id,{status:data.status,reviewedBy:req.userId,reviewedAt:new Date()},{new:true}).populate('userId','name username email isVerified'); if(!item)throw new HttpError(404,'Verification request not found.'); await User.findByIdAndUpdate(item.userId,{isVerified:data.status==='approved'}); await audit(req,'review_verification','verification',id,{status:data.status}); return ok(res,item);}));
-router.get('/config', asyncHandler(async(_req,res)=>ok(res,await PlatformConfig.findOneAndUpdate({key:'platform'},{$setOnInsert:{key:'platform'}},{new:true,upsert:true}))));
-router.patch('/config', asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({flags:z.record(z.string(),z.boolean()).optional(),limits:z.record(z.string(),z.number()).optional(),announcement:z.string().max(500).optional(),supportedContentTypes:z.array(z.string()).max(20).optional()}).parse(req.body); const config=await PlatformConfig.findOneAndUpdate({key:'platform'},{$set:data},{new:true,upsert:true}); await audit(req,'update_platform_config','config',String(config._id),data); return ok(res,config);}));
+router.get('/verification', requirePermission('manage_verification'), asyncHandler(async(req,res)=>ok(res,await VerificationRequest.find({status:String(req.query.status??'pending')}).sort({createdAt:1}).limit(100).populate('userId','name username email avatarUrl isVerified'))));
+router.patch('/verification/:id', requirePermission('manage_verification'), asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({status:z.enum(['approved','rejected'])}).parse(req.body); const id=String(req.params.id); const item=await VerificationRequest.findByIdAndUpdate(id,{status:data.status,reviewedBy:req.userId,reviewedAt:new Date()},{new:true}).populate('userId','name username email isVerified'); if(!item)throw new HttpError(404,'Verification request not found.'); await User.findByIdAndUpdate(item.userId,{isVerified:data.status==='approved'}); await audit(req,'review_verification','verification',id,{status:data.status}); return ok(res,item);}));
+router.get('/config', requirePermission('manage_config'), asyncHandler(async(_req,res)=>ok(res,await PlatformConfig.findOneAndUpdate({key:'platform'},{$setOnInsert:{key:'platform'}},{new:true,upsert:true}))));
+router.patch('/config', requirePermission('manage_config'), asyncHandler(async(req:AuthRequest,res)=>{const data=z.object({flags:z.record(z.string(),z.boolean()).optional(),limits:z.record(z.string(),z.number()).optional(),announcement:z.string().max(500).optional(),supportedContentTypes:z.array(z.string()).max(20).optional()}).parse(req.body); const config=await PlatformConfig.findOneAndUpdate({key:'platform'},{$set:data},{new:true,upsert:true}); await audit(req,'update_platform_config','config',String(config._id),data); return ok(res,config);}));
 
-router.delete('/posts/:id', asyncHandler(async(req:AuthRequest,res)=>{const id=String(req.params.id); const post=await Post.findByIdAndDelete(id); if(!post)throw new HttpError(404,'Post not found.'); await Comment.deleteMany({postId:id}); await audit(req,'remove_post','post',id); return ok(res,{deleted:true});}));
-router.get('/audit-logs', asyncHandler(async(_req,res)=>ok(res,await AuditLog.find().sort({createdAt:-1}).limit(100).populate('actorId','name username role'))));
+router.delete('/posts/:id', requirePermission('moderate_content'), asyncHandler(async(req:AuthRequest,res)=>{const id=String(req.params.id); const post=await Post.findByIdAndDelete(id); if(!post)throw new HttpError(404,'Post not found.'); await Comment.deleteMany({postId:id}); await audit(req,'remove_post','post',id); return ok(res,{deleted:true});}));
+router.get('/audit-logs', requirePermission('view_audit'), asyncHandler(async(_req,res)=>ok(res,await AuditLog.find().sort({createdAt:-1}).limit(100).populate('actorId','name username role'))));
 
 export default router;

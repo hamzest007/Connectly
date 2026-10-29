@@ -36,6 +36,7 @@ const userSchema = new Schema({
   isVerified: {type: Boolean, default: false},
   emailVerified: {type: Boolean, default: false},
   twoFactorEnabled: {type: Boolean, default: false},
+  e2eePublicKey: {type: String, default: '', maxlength: 200},
   deactivatedAt: {type: Date, default: null},
   verificationCodeHash: {type: String, default: ''},
   verificationExpiresAt: {type: Date, default: null},
@@ -49,6 +50,7 @@ const userSchema = new Schema({
   accentColor: {type: String, default: '#635BFF'},
   profileLayout: {type: String, enum: ['standard','compact','featured'], default: 'standard'},
   featuredSections: {type: [String], default: []},
+  lastSeenAt: {type: Date, default: null, index: true},
 }, {timestamps: true});
 
 const refreshTokenSchema = new Schema({

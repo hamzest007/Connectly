@@ -11,6 +11,11 @@ export type Post = {
     avatarUrl?: string;
   };
   body: string;
+  audience?: 'public' | 'friends' | 'close-friends' | 'private';
+  location?: string;
+  hashtags?: string[];
+  accessibilityText?: string;
+  interactive?: { type: 'quiz' | 'question' | 'countdown'; prompt: string; options?: string[]; answer?: string; endsAt?: string };
   createdAt: string;
   reactions: number;
   comments: number;
@@ -20,8 +25,14 @@ export type Post = {
   pinned?: boolean;
   recommendationReason?: string;
   contentWarning?: string;
+  poll?: {
+    question: string;
+    options: { _id: string; label: string; votes: number }[];
+    endsAt?: string;
+  };
   group?: { id: string; name: string; visibility?: string; coverUrl?: string; memberCount?: number };
   media?: { url: string; type: 'image' | 'video'; thumbnailUrl?: string }[];
+  isReel?: boolean;
   repostOf?: {
     id: string;
     author: Post['author'];

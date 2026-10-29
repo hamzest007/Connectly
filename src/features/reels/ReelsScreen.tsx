@@ -1,17 +1,20 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Alert,
-  Dimensions,
   FlatList,
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Video from 'react-native-video';
 import { Avatar } from '../../components/common/Avatar';
 import { apiRequest } from '../../services/api/client';
@@ -31,15 +34,15 @@ type Reel = {
   commentCount: number;
   shareCount: number;
   viewerReaction?: string | null;
+  viewerSaved?: boolean;
 };
 type ReelComment = {
   _id: string;
   body: string;
   createdAt: string;
   authorId: { name: string; username: string; avatarUrl?: string };
+  parentId?: string;
 };
-const reelHeight = Dimensions.get('window').height;
-
 export function ReelsScreen({
   accessToken,
   onCreate,
@@ -47,8 +50,14 @@ export function ReelsScreen({
   accessToken: string;
   onCreate: () => void;
 }) {
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const reelHeight = Math.max(420, windowHeight);
+  const compact = windowWidth < 360;
   const [items, setItems] = React.useState<Reel[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [feed, setFeed] = React.useState<'reels' | 'following'>('reels');
   const [error, setError] = React.useState('');
   const [active, setActive] = React.useState<string | null>(null);
   const [muted, setMuted] = React.useState(false);
@@ -62,38 +71,50 @@ export function ReelsScreen({
   const [comments, setComments] = React.useState<ReelComment[]>([]);
   const [commentText, setCommentText] = React.useState('');
   const [commentBusy, setCommentBusy] = React.useState(false);
-  const load = React.useCallback(async () => {
-    setLoading(true);
+  const [saved, setSaved] = React.useState<Record<string, boolean>>({});
+  const [replyTarget, setReplyTarget] = React.useState<ReelComment | null>(null);
+  const [moreTarget, setMoreTarget] = React.useState<Reel | null>(null);
+  const [appActive, setAppActive] = React.useState(true);
+  const cursorRef = React.useRef<string | null>(null);
+  const requestRef = React.useRef(false);
+  const interactionRef = React.useRef<Record<string, boolean>>({});
+  const load = React.useCallback(async (reset = false) => {
+    if (requestRef.current) return;
+    requestRef.current = true;
+    if (reset) setRefreshing(true); else setLoading(true);
     setError('');
     try {
-      const result = await apiRequest<{ items: Reel[] }>(
-        '/posts?feed=reels&limit=30',
+      const before = reset ? '' : cursorRef.current ? `&before=${encodeURIComponent(cursorRef.current)}` : '';
+      const result = await apiRequest<{ items: Reel[]; nextCursor: string | null }>(
+        `/posts?feed=${feed}&limit=8${before}`,
         {},
         accessToken,
       );
       const reels = result.items.filter(
         item => item.media?.[0]?.type === 'video',
       );
-      setItems(reels);
-      setActive(reels[0]?._id ?? null);
-      setLiked(
-        Object.fromEntries(
-          reels.map(item => [item._id, Boolean(item.viewerReaction)]),
-        ),
-      );
-      setLikeCounts(
-        Object.fromEntries(reels.map(item => [item._id, item.reactionCount])),
-      );
+      cursorRef.current = result.nextCursor;
+      setItems(current => reset ? reels : [...current, ...reels.filter(item => !current.some(existing => existing._id === item._id))]);
+      if (reset) setActive(reels[0]?._id ?? null);
+      setLiked(current => ({ ...current, ...Object.fromEntries(reels.map(item => [item._id, Boolean(item.viewerReaction)])) }));
+      setSaved(current => ({ ...current, ...Object.fromEntries(reels.map(item => [item._id, Boolean(item.viewerSaved)]) ) }));
+      setLikeCounts(current => ({ ...current, ...Object.fromEntries(reels.map(item => [item._id, item.reactionCount])) }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load reels.');
     } finally {
-      setLoading(false);
+      setLoading(false); setRefreshing(false); requestRef.current = false;
     }
-  }, [accessToken]);
+  }, [accessToken, feed]);
   React.useEffect(() => {
-    void load();
+    cursorRef.current = null;
+    setItems([]);
+    void load(true);
     void loadReelHistory().then(setHistory);
   }, [load]);
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    return () => subscription.remove();
+  }, []);
   const recordView = async (id: string) => {
     const next = [id, ...history.filter(item => item !== id)];
     setHistory(next);
@@ -114,22 +135,29 @@ export function ReelsScreen({
     } catch {}
   };
   const saveReel = async (item: Reel) => {
+    if (interactionRef.current[`save:${item._id}`]) return;
+    interactionRef.current[`save:${item._id}`] = true;
+    const wasSaved = Boolean(saved[item._id]);
+    setSaved(current => ({ ...current, [item._id]: !wasSaved }));
     try {
       await apiRequest(
         `/posts/${item._id}/save`,
-        { method: 'POST' },
+        { method: wasSaved ? 'DELETE' : 'POST' },
         accessToken,
       );
-    } catch {}
+    } catch { setSaved(current => ({ ...current, [item._id]: wasSaved })); }
+    finally { interactionRef.current[`save:${item._id}`] = false; }
   };
   const shareReel = async (item: Reel) => {
     try {
-      await apiRequest(
+      const result = await apiRequest<{shareCount: number}>(
         `/posts/${item._id}/share`,
         { method: 'POST' },
         accessToken,
       );
-    } catch {}
+      setItems(current => current.map(value => value._id === item._id ? {...value, shareCount: result.shareCount} : value));
+      await Share.share({ message: `Watch this reel on Connectly: connectly://post/${item._id}` });
+    } catch (e) { if (e instanceof Error && e.message !== 'User did not share') Alert.alert('Unable to share', e.message); }
   };
   const feedback = async (
     item: Reel,
@@ -152,8 +180,20 @@ export function ReelsScreen({
       Alert.alert('Unable to report', e instanceof Error ? e.message : 'Please try again later.');
     }
   };
+  const blockCreator = async (item: Reel) => {
+    try {
+      await apiRequest(`/blocks/${item.authorId._id}`, { method: 'POST' }, accessToken);
+      setItems(current => current.filter(reel => reel.authorId._id !== item.authorId._id));
+      Alert.alert('Creator blocked', 'You will no longer see this creator in your feeds.');
+    } catch (e) { Alert.alert('Unable to block creator', e instanceof Error ? e.message : 'Please try again later.'); }
+  };
   const toggleLike = async (item: Reel) => {
+    if (interactionRef.current[`like:${item._id}`]) return;
+    interactionRef.current[`like:${item._id}`] = true;
     const isLiked = Boolean(liked[item._id]);
+    const previousCount = likeCounts[item._id] ?? item.reactionCount;
+    setLiked(current => ({ ...current, [item._id]: !isLiked }));
+    setLikeCounts(current => ({ ...current, [item._id]: Math.max(0, previousCount + (isLiked ? -1 : 1)) }));
     try {
       const result = isLiked
         ? await apiRequest<{ count: number }>(
@@ -166,9 +206,9 @@ export function ReelsScreen({
             { method: 'PUT', body: JSON.stringify({ type: 'Like' }) },
             accessToken,
           );
-      setLiked(current => ({ ...current, [item._id]: !isLiked }));
       setLikeCounts(current => ({ ...current, [item._id]: result.count }));
-    } catch {}
+    } catch { setLiked(current => ({ ...current, [item._id]: isLiked })); setLikeCounts(current => ({ ...current, [item._id]: previousCount })); }
+    finally { interactionRef.current[`like:${item._id}`] = false; }
   };
   const openComments = async (item: Reel) => {
     setCommentTarget(item);
@@ -192,10 +232,11 @@ export function ReelsScreen({
     try {
       await apiRequest(
         `/posts/${commentTarget._id}/comments`,
-        { method: 'POST', body: JSON.stringify({ body: commentText.trim() }) },
+        { method: 'POST', body: JSON.stringify({ body: commentText.trim(), parentId: replyTarget?._id }) },
         accessToken,
       );
       setCommentText('');
+      setReplyTarget(null);
       setComments(
         await apiRequest<ReelComment[]>(
           `/posts/${commentTarget._id}/comments`,
@@ -219,7 +260,7 @@ export function ReelsScreen({
       setCommentBusy(false);
     }
   };
-  if (loading)
+  if (loading && !items.length)
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.blue} />
@@ -227,18 +268,13 @@ export function ReelsScreen({
       </View>
     );
   return (
-    <View style={styles.page}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>DISCOVER</Text>
-          <Text style={styles.title}>Reels</Text>
-          <Text style={styles.subtitle}>
-            Short videos from the Connectly community
-          </Text>
+    <View style={[styles.page, !items.length && styles.emptyPage]}>
+      <View style={[styles.header, { paddingTop: Math.max(spacing.sm, insets.top) }, !items.length && styles.emptyHeader]}>
+        <View style={styles.headerTop}><Text style={[styles.title, !items.length && styles.emptyHeaderTitle]}>Reels</Text><Pressable style={styles.create} onPress={onCreate} accessibilityLabel="Create reel"><Text style={styles.createText}>＋</Text></Pressable></View>
+        <View style={styles.feedTabs}>
+          <Pressable onPress={() => setFeed('reels')} style={[styles.feedTab, compact && styles.feedTabCompact, feed === 'reels' && styles.feedTabActive]}><Text style={[styles.feedTabText, !items.length && styles.emptyTabText, feed === 'reels' && styles.feedTabTextActive]}>For You</Text></Pressable>
+          <Pressable onPress={() => setFeed('following')} style={[styles.feedTab, compact && styles.feedTabCompact, feed === 'following' && styles.feedTabActive]}><Text style={[styles.feedTabText, !items.length && styles.emptyTabText, feed === 'following' && styles.feedTabTextActive]}>Following</Text></Pressable>
         </View>
-        <Pressable style={styles.create} onPress={onCreate}>
-          <Text style={styles.createText}>＋ Reel</Text>
-        </Pressable>
       </View>
       {error ? (
         <View style={styles.empty}>
@@ -254,7 +290,9 @@ export function ReelsScreen({
           keyExtractor={item => item._id}
           contentContainerStyle={styles.list}
           refreshing={loading}
-          onRefresh={() => void load()}
+          onRefresh={() => void load(true)}
+          onEndReached={() => { if (cursorRef.current) void load(); }}
+          onEndReachedThreshold={0.7}
           pagingEnabled
           snapToAlignment="start"
           decelerationRate="fast"
@@ -267,22 +305,21 @@ export function ReelsScreen({
           }}
           viewabilityConfig={{ itemVisiblePercentThreshold: 70 }}
           ListEmptyComponent={
-            <View style={styles.empty}>
+            <View style={[styles.empty, styles.emptyState]}>
               <Text style={styles.emptyIcon}>▶</Text>
               <Text style={styles.emptyTitle}>No reels yet</Text>
-              <Text style={styles.muted}>
-                Publish the first short video from Create.
-              </Text>
+              <Text style={styles.emptyText}>Be the first to share a moment with your community.</Text>
+              <Pressable style={styles.emptyCreate} onPress={onCreate}><Text style={styles.emptyCreateText}>Create your first reel</Text></Pressable>
             </View>
           }
           renderItem={({ item }) => (
             <View style={styles.card}>
-              <View style={styles.videoWrap}>
+              <View style={[styles.videoWrap, { height: reelHeight }]}>
                 <Video
                   source={{ uri: item.media[0].url }}
                   style={styles.video}
                   resizeMode="cover"
-                  paused={active !== item._id}
+                  paused={active !== item._id || !appActive}
                   repeat
                   muted={muted}
                   controls={false}
@@ -349,7 +386,7 @@ export function ReelsScreen({
                     onPress={() => void saveReel(item)}
                   >
                     <Text style={styles.reelActionIcon}>▱</Text>
-                    <Text style={styles.reelActionText}>Save</Text>
+                    <Text style={styles.reelActionText}>{saved[item._id] ? 'Saved' : 'Save'}</Text>
                   </Pressable>
                   <Pressable
                     style={styles.reelAction}
@@ -362,23 +399,12 @@ export function ReelsScreen({
                         : 'Follow'}
                     </Text>
                   </Pressable>
-                  <Pressable style={styles.reelAction} onPress={onCreate}>
-                    <Text style={styles.reelActionIcon}>↻</Text>
-                    <Text style={styles.reelActionText}>Remix</Text>
-                  </Pressable>
                   <Pressable
                     style={styles.reelAction}
-                    onPress={() => void feedback(item, 'not-interested')}
+                    onPress={() => setMoreTarget(item)}
                   >
-                    <Text style={styles.reelActionIcon}>−</Text>
-                    <Text style={styles.reelActionText}>Not for me</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.reelAction}
-                    onPress={() => void reportReel(item)}
-                  >
-                    <Text style={styles.reelActionIcon}>⚑</Text>
-                    <Text style={styles.reelActionText}>Report</Text>
+                    <Text style={styles.reelActionIcon}>•••</Text>
+                    <Text style={styles.reelActionText}>More</Text>
                   </Pressable>
                 </View>
                 <View style={styles.overlay}>
@@ -404,6 +430,7 @@ export function ReelsScreen({
                   {item.body ? (
                     <Text style={styles.caption}>{item.body}</Text>
                   ) : null}
+                  <Text style={styles.audio}>♫ Original audio · Connectly</Text>
                   <Text style={styles.stats}>
                     {likeCounts[item._id] ?? item.reactionCount} likes ·{' '}
                     {item.commentCount} comments · {item.shareCount} shares
@@ -465,12 +492,14 @@ export function ReelsScreen({
                         </Text>
                       </Text>
                       <Text style={styles.commentBody}>{comment.body}</Text>
+                      <Pressable onPress={() => setReplyTarget(comment)}><Text style={styles.replyButton}>Reply</Text></Pressable>
                     </View>
                   </View>
                 ))
               )}
             </ScrollView>
             <View style={styles.composer}>
+              {replyTarget ? <View style={styles.replying}><Text style={styles.replyingText}>Replying to @{replyTarget.authorId.username}</Text><Pressable onPress={() => setReplyTarget(null)}><Text style={styles.close}>×</Text></Pressable></View> : null}
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
@@ -497,49 +526,56 @@ export function ReelsScreen({
           </View>
         </View>
       </Modal>
+      <Modal visible={Boolean(moreTarget)} transparent animationType="slide" onRequestClose={() => setMoreTarget(null)}>
+        <View style={styles.modalBackdrop}><Pressable style={styles.dismissArea} onPress={() => setMoreTarget(null)} /><View style={styles.optionsSheet}><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>Reel options</Text>{moreTarget ? <><Pressable style={styles.option} onPress={() => { void feedback(moreTarget, 'not-interested'); setMoreTarget(null); }}><Text style={styles.optionText}>Not interested</Text></Pressable><Pressable style={styles.option} onPress={() => { void reportReel(moreTarget); setMoreTarget(null); }}><Text style={styles.optionText}>Report reel</Text></Pressable><Pressable style={styles.option} onPress={() => { void Share.share({message: `Watch this reel on Connectly: connectly://post/${moreTarget._id}`}); setMoreTarget(null); }}><Text style={styles.optionText}>Share link</Text></Pressable><Pressable style={styles.option} onPress={() => { void blockCreator(moreTarget); setMoreTarget(null); }}><Text style={[styles.optionText, styles.danger]}>Block creator</Text></Pressable></> : null}<Pressable style={styles.cancelOption} onPress={() => setMoreTarget(null)}><Text style={styles.cancelOptionText}>Cancel</Text></Pressable></View></View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.canvas, padding: spacing.md },
+  page: { flex: 1, backgroundColor: '#05070B' },
+  emptyPage: { backgroundColor: colors.canvas },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 5,
+    paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.md,
+    backgroundColor: 'rgba(5,7,11,.62)',
   },
-  eyebrow: {
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: colors.blue,
-    fontWeight: '900',
-  },
+  emptyHeader: { backgroundColor: colors.canvas },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: {
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: '900',
-    color: colors.ink,
-    letterSpacing: -1.1,
+    color: '#fff', letterSpacing: -0.5,
   },
-  subtitle: { fontSize: 12, color: colors.muted, marginTop: 3 },
+  emptyHeaderTitle: { color: colors.ink },
+  feedTabs: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  feedTab: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill },
+  feedTabActive: { backgroundColor: colors.blue },
+  feedTabText: { color: 'rgba(255,255,255,.72)', fontSize: 12, fontWeight: '800' },
+  emptyTabText: { color: colors.muted },
+  feedTabCompact: { paddingHorizontal: spacing.sm },
+  feedTabTextActive: { color: '#fff' },
   create: {
-    backgroundColor: colors.ink,
+    backgroundColor: colors.blue,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     ...shadow,
   },
-  createText: { color: '#fff', fontWeight: '900', fontSize: 12 },
-  list: { paddingBottom: 110 },
+  createText: { color: '#fff', fontWeight: '900', fontSize: 22 },
+  list: { paddingBottom: 0 },
   card: {
-    marginBottom: spacing.md,
-    borderRadius: radius.lg,
+    marginBottom: 0,
+    borderRadius: 0,
     overflow: 'hidden',
     backgroundColor: '#111827',
     ...shadow,
   },
-  videoWrap: { height: reelHeight, position: 'relative' },
+  videoWrap: { position: 'relative', backgroundColor: '#05070B' },
   video: { width: '100%', height: '100%' },
   videoTap: {
     position: 'absolute',
@@ -609,6 +645,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 4,
   },
+  audio: { color: 'rgba(255,255,255,.78)', fontSize: 11, marginTop: spacing.xs, fontWeight: '700' },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -617,6 +654,7 @@ const styles = StyleSheet.create({
   },
   muted: { color: colors.muted, fontSize: 13, marginTop: spacing.sm },
   empty: { alignItems: 'center', justifyContent: 'center', paddingTop: 100 },
+  emptyState: { alignSelf: 'center', width: '92%', maxWidth: 440, minHeight: 330, marginTop: 150, padding: spacing.xl, paddingTop: spacing.xxl, borderRadius: 28, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, ...shadow },
   emptyIcon: { fontSize: 35, color: colors.blue },
   emptyTitle: {
     fontSize: 19,
@@ -625,6 +663,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   retry: { color: colors.blue, fontWeight: '900', marginTop: spacing.md },
+  emptyText: { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 260, marginTop: spacing.sm },
+  emptyCreate: { marginTop: spacing.lg, backgroundColor: colors.blue, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  emptyCreateText: { color: '#fff', fontSize: 13, fontWeight: '900' },
   modalBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -680,6 +721,15 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 3,
   },
+  replyButton: { color: colors.blue, fontSize: 11, fontWeight: '800', marginTop: 6 },
+  replying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1, backgroundColor: colors.blueSoft, paddingHorizontal: spacing.sm, borderRadius: radius.sm, minHeight: 32 },
+  replyingText: { color: colors.blue, fontSize: 10, fontWeight: '800' },
+  optionsSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.md, paddingBottom: spacing.xl },
+  option: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: '#edf0f6' },
+  optionText: { color: colors.ink, fontSize: 16, fontWeight: '800' },
+  danger: { color: colors.danger },
+  cancelOption: { alignItems: 'center', paddingVertical: spacing.md, marginTop: spacing.sm, backgroundColor: '#f4f6fb', borderRadius: radius.md },
+  cancelOptionText: { color: colors.ink, fontWeight: '900' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { apiRequest } from '../../services/api/client';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
+import { ActionModal, ActionModalAction } from '../../components/common/ActionModal';
 type Kind =
   | 'activity'
   | 'privacy'
@@ -57,6 +58,12 @@ export function SettingsDetailScreen({
   const [archivedPosts, setArchivedPosts] = React.useState<any[]>([]);
   const [archivedStories, setArchivedStories] = React.useState<any[]>([]);
   const [reportText, setReportText] = React.useState('');
+  const [actionModal, setActionModal] = React.useState<{
+    title: string;
+    message?: string;
+    icon?: string;
+    actions: ActionModalAction[];
+  } | null>(null);
   const labels: { [key in Kind]: [string, string] } = {
     activity: ['Your activity', 'Review your recent account activity.'],
     privacy: [
@@ -226,41 +233,41 @@ export function SettingsDetailScreen({
       );
       setItems([]);
     } else if (label === 'Deactivate account') {
-      Alert.alert(
-        'Deactivate account',
-        'Your account will be hidden until you sign in again.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Deactivate',
-            style: 'destructive',
-            onPress: async () => {
-              await apiRequest(
-                '/auth/deactivate',
-                { method: 'POST' },
-                accessToken,
-              );
+      setActionModal({
+        title: 'Deactivate account?',
+        message: 'Your account will be hidden until you sign in again.',
+        icon: '◌',
+        actions: [
+          { label: 'Cancel', tone: 'secondary', onPress: () => setActionModal(null) },
+          { label: 'Deactivate', tone: 'destructive', onPress: async () => {
+            try {
+              await apiRequest('/auth/deactivate', { method: 'POST' }, accessToken);
+              setActionModal(null);
               onLogout();
-            },
-          },
+            } catch (e) {
+              setActionModal({ title: 'Unable to deactivate', message: e instanceof Error ? e.message : 'Please try again.', actions: [{ label: 'Close', tone: 'secondary', onPress: () => setActionModal(null) }] });
+            }
+          } },
         ],
-      );
+      });
     } else if (label === 'Delete account') {
-      Alert.alert('Delete account', 'This permanently removes your account.', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await apiRequest(
-              '/auth/account',
-              { method: 'DELETE' },
-              accessToken,
-            );
-            onLogout();
-          },
-        },
-      ]);
+      setActionModal({
+        title: 'Delete account permanently?',
+        message: 'This removes your account and cannot be undone.',
+        icon: '!',
+        actions: [
+          { label: 'Cancel', tone: 'secondary', onPress: () => setActionModal(null) },
+          { label: 'Delete account', tone: 'destructive', onPress: async () => {
+            try {
+              await apiRequest('/auth/account', { method: 'DELETE' }, accessToken);
+              setActionModal(null);
+              onLogout();
+            } catch (e) {
+              setActionModal({ title: 'Unable to delete account', message: e instanceof Error ? e.message : 'Please try again.', actions: [{ label: 'Close', tone: 'secondary', onPress: () => setActionModal(null) }] });
+            }
+          } },
+        ],
+      });
     } else if (label === 'Blocked accounts') {
       onBlocked?.();
     } else
@@ -331,7 +338,7 @@ export function SettingsDetailScreen({
           <Pressable style={styles.row} onPress={() => void updateRecommendationPreferences({chronological:!recommendationPreferences.chronological})}><View style={styles.copy}><Text style={styles.rowTitle}>Chronological feed</Text><Text style={styles.rowMeta}>Show the newest posts first</Text></View><View style={[styles.toggle,recommendationPreferences.chronological&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.chronological&&styles.thumbOn]}/></View></Pressable>
           <Pressable style={styles.row} onPress={() => void updateRecommendationPreferences({showReasons:!recommendationPreferences.showReasons})}><View style={styles.copy}><Text style={styles.rowTitle}>Why posts are recommended</Text><Text style={styles.rowMeta}>Show explanations on suggested posts</Text></View><View style={[styles.toggle,recommendationPreferences.showReasons&&styles.toggleOn]}><View style={[styles.thumb,recommendationPreferences.showReasons&&styles.thumbOn]}/></View></Pressable>
           <View style={styles.keywordBox}><Text style={styles.rowTitle}>Mute keywords</Text><Text style={styles.rowMeta}>Hide posts containing these words or phrases.</Text><View style={styles.keywordInputRow}><TextInput value={keyword} onChangeText={setKeyword} onSubmitEditing={() => { const value=keyword.trim(); if(value && !(recommendationPreferences.mutedKeywords||[]).includes(value)) { void updateRecommendationPreferences({mutedKeywords:[...(recommendationPreferences.mutedKeywords||[]),value]}); setKeyword(''); } }} placeholder="Add a word or phrase" placeholderTextColor={colors.muted} style={styles.keywordInput}/><Pressable onPress={() => { const value=keyword.trim(); if(value && !(recommendationPreferences.mutedKeywords||[]).includes(value)) { void updateRecommendationPreferences({mutedKeywords:[...(recommendationPreferences.mutedKeywords||[]),value]}); setKeyword(''); } }}><Text style={styles.actionText}>Add</Text></Pressable></View>{(recommendationPreferences.mutedKeywords||[]).map((value:string)=><View style={styles.keywordPill} key={value}><Text style={styles.keywordText}>{value}</Text><Pressable onPress={() => void updateRecommendationPreferences({mutedKeywords:(recommendationPreferences.mutedKeywords||[]).filter((item:string)=>item!==value)})}><Text style={styles.keywordRemove}>×</Text></Pressable></View>)}</View>
-          <Pressable style={styles.primary} onPress={()=>Alert.alert('Reset personalized recommendations','This clears your feed preferences and muted keywords.',[{text:'Cancel',style:'cancel'},{text:'Reset',style:'destructive',onPress:async()=>{try { await apiRequest('/users/me/recommendation-preferences/reset',{method:'POST'},accessToken); setRecommendationPreferences({chronological:false,showReasons:true,mutedKeywords:[]}); } catch (e) { Alert.alert('Unable to reset recommendations', e instanceof Error ? e.message : 'Please try again.'); }}}])}><Text style={styles.primaryText}>Reset personalized recommendations</Text></Pressable>
+          <Pressable style={styles.primary} onPress={()=>setActionModal({ title: 'Reset recommendations?', message: 'This clears your feed preferences and muted keywords.', icon: '↻', actions: [{ label: 'Cancel', tone: 'secondary', onPress: () => setActionModal(null) }, { label: 'Reset recommendations', tone: 'destructive', onPress: async () => { try { await apiRequest('/users/me/recommendation-preferences/reset',{method:'POST'},accessToken); setRecommendationPreferences({chronological:false,showReasons:true,mutedKeywords:[]}); setActionModal(null); } catch (e) { setActionModal({ title: 'Unable to reset recommendations', message: e instanceof Error ? e.message : 'Please try again.', actions: [{ label: 'Close', tone: 'secondary', onPress: () => setActionModal(null) }] }); } } }]})}><Text style={styles.primaryText}>Reset personalized recommendations</Text></Pressable>
         </View>
       ) : kind === 'security' ? (
         <View>
@@ -433,7 +440,7 @@ export function SettingsDetailScreen({
             <Text style={styles.rowTitle}>Help center</Text>
             <Text style={styles.rowMeta}>Common answers for account, privacy, groups, posts, and notifications.</Text>
             {['How do I change my privacy?', 'How do I manage a group?', 'How do I recover my account?'].map(question => (
-              <Pressable key={question} style={styles.supportQuestion} onPress={() => Alert.alert(question, question.includes('privacy') ? 'Open Privacy and security to change your account visibility and blocked accounts.' : question.includes('group') ? 'Open Groups and Pages to manage members, roles, approvals, posts, and group identity.' : 'Use Security and login to review sessions, then contact support if you still need help.')}>
+              <Pressable key={question} style={styles.supportQuestion} onPress={() => setActionModal({ title: question, icon: '?', message: question.includes('privacy') ? 'Open Privacy and security to change your account visibility and blocked accounts.' : question.includes('group') ? 'Open Groups and Pages to manage members, roles, approvals, posts, and group identity.' : 'Use Security and login to review sessions, then contact support if you still need help.', actions: [{ label: 'Got it', tone: 'primary', onPress: () => setActionModal(null) }] })}>
                 <Text style={styles.rowMeta}>{question}</Text><Text style={styles.chevron}>›</Text>
               </Pressable>
             ))}
@@ -494,6 +501,14 @@ export function SettingsDetailScreen({
           ))}
         </View>
       )}
+      <ActionModal
+        visible={Boolean(actionModal)}
+        title={actionModal?.title ?? ''}
+        message={actionModal?.message}
+        icon={actionModal?.icon}
+        actions={actionModal?.actions ?? []}
+        onClose={() => setActionModal(null)}
+      />
     </ScrollView>
   );
 }

@@ -88,7 +88,7 @@ docker compose up -d mongodb
 npm run seed
 ```
 
-Demo accounts use the password `Connectly123!`. Change it immediately outside local development.
+The seed command requires `SEED_ADMIN_PASSWORD` in `backend/.env`; use a unique local password and never reuse it in shared or production environments.
 
 For MongoDB Atlas, replace `MONGODB_URI` in `backend/.env` with your Atlas connection string and run `npm run seed` after the database is reachable.
 

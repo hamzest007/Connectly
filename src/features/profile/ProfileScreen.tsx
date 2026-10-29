@@ -67,7 +67,10 @@ type ProfilePost = {
   reactionCount: number;
   commentCount: number;
   shareCount: number;
+  audience?: Post['audience']; location?: string; hashtags?: string[]; accessibilityText?: string; contentWarning?: string; interactive?: Post['interactive'];
+  poll?: { question?: string; options?: { _id: string; label: string; votes?: number }[]; endsAt?: string };
   media?: Post['media'];
+  isReel?: boolean;
   authorId: { _id: string; name: string; username: string; avatarUrl?: string };
 };
 type PageDashboard = {page:{name:string;username:string;active:boolean};followers:number;engagement:{posts:number;likes:number;comments:number;shares:number;views:number;reach:number};monetization:{enabled:boolean;tipsEnabled:boolean;subscriptionsEnabled:boolean};followerGrowth:Array<{_id:string;count:number}>;topPosts:Array<{_id:string;body:string;reactionCount:number;commentCount:number;shareCount:number;viewCount:number}>;followerList:Array<{followerId:{name:string;username:string;avatarUrl?:string;accountType?:'user'|'page'}}>};
@@ -177,7 +180,10 @@ export function ProfileScreen({
           reactions: item.reactionCount,
           comments: item.commentCount,
           shares: item.shareCount,
+          audience: item.audience, location: item.location, hashtags: item.hashtags, accessibilityText: item.accessibilityText, contentWarning: item.contentWarning, interactive: item.interactive,
+          poll: item.poll?.question && item.poll.options?.length ? { question: item.poll.question, options: item.poll.options.map(option => ({ _id: option._id, label: option.label, votes: option.votes ?? 0 })), endsAt: item.poll.endsAt } : undefined,
           media: item.media,
+          isReel: item.isReel,
           author: {
             id: item.authorId._id,
             name: item.authorId.name,
@@ -203,6 +209,7 @@ export function ProfileScreen({
   React.useEffect(() => {
     void load();
   }, [load]);
+  const visiblePosts = profileTab === 'reels' ? posts.filter(post => post.isReel) : profileTab === 'media' ? posts.filter(post => Boolean(post.media?.length)) : profileTab === 'posts' ? posts.filter(post => !post.isReel) : [];
   const toggleFollow = async () => {
     if (!profile || followBusy || isSelf) return;
     setFollowBusy(true);
@@ -674,7 +681,7 @@ export function ProfileScreen({
             : profileTab[0].toUpperCase() + profileTab.slice(1)}
         </Text>
         <Text style={styles.public}>
-          {profileTab === 'posts' ? `${posts.length} public` : 'Coming soon'}
+          {profileTab === 'tagged' ? 'Coming soon' : `${visiblePosts.length} ${profileTab === 'media' ? 'media' : profileTab === 'reels' ? 'reels' : 'public'}`}
         </Text>
       </View>
           {profileTab === 'posts' && !isSelf && profile.privateAccount ? (
@@ -683,8 +690,8 @@ export function ProfileScreen({
               <Text style={styles.emptyTitle}>This account is private</Text>
               <Text style={styles.emptyText}>Only the account owner can see these posts.</Text>
             </View>
-          ) : profileTab === 'posts' && posts.length ? (
-        posts.map(post => (
+          ) : profileTab !== 'tagged' && visiblePosts.length ? (
+        visiblePosts.map(post => (
           <PostCard
             key={post.id}
             post={post}

@@ -22,6 +22,7 @@ import {
 import { Post, Reaction } from '../../types/social';
 import { apiRequest } from '../../services/api/client';
 import Video from 'react-native-video';
+import { pickMedia, uploadMedia } from '../../services/media/cloudinary';
 
 type Comment = {
   _id: string;
@@ -69,6 +70,8 @@ export function PostCard({
   const [showComments, setShowComments] = useState(Boolean(initialShowComments));
   const [showMenu, setShowMenu] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reactionBusy, setReactionBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
   const [shares, setShares] = useState(post.shares);
   const [saved, setSaved] = useState(Boolean(initialSaved));
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
@@ -79,9 +82,24 @@ export function PostCard({
   const [showEditModal, setShowEditModal] = useState(false);
   const [editBody, setEditBody] = useState(post.body);
   const [editing, setEditing] = useState(false);
+  const [editAudience, setEditAudience] = useState<Post['audience']>(post.audience ?? 'public');
+  const [editLocation, setEditLocation] = useState(post.location ?? '');
+  const [editHashtags, setEditHashtags] = useState((post.hashtags ?? []).join(' '));
+  const [editAccessibility, setEditAccessibility] = useState(post.accessibilityText ?? '');
+  const [editWarning, setEditWarning] = useState(post.contentWarning ?? '');
+  const [editMedia, setEditMedia] = useState(post.media ?? []);
+  const [editPollQuestion, setEditPollQuestion] = useState(post.poll?.question ?? '');
+  const [editPollOptions, setEditPollOptions] = useState((post.poll?.options ?? []).map(option => option.label));
+  const [poll, setPoll] = useState(post.poll);
+  const [pollBusy, setPollBusy] = useState(false);
+  const [pollVoted, setPollVoted] = useState(false);
   React.useEffect(() => {
     setSaved(Boolean(initialSaved));
   }, [initialSaved, post.id]);
+  React.useEffect(() => {
+    setPoll(post.poll);
+    setPollVoted(false);
+  }, [post.id, post.poll]);
   React.useEffect(() => {
     setResolvedGroupCover(post.group?.coverUrl);
     if (!post.group?.id || post.group.coverUrl) return;
@@ -118,7 +136,28 @@ export function PostCard({
     '🚀',
   ];
 
+  const votePoll = async (optionId: string) => {
+    if (!poll || pollBusy || pollVoted) return;
+    setPollBusy(true);
+    try {
+      const result = await apiRequest<{ poll: NonNullable<Post['poll']>; voted: boolean }>(`/posts/${post.id}/poll/${optionId}/vote`, { method: 'POST' }, accessToken);
+      setPoll(result.poll);
+      setPollVoted(Boolean(result.voted));
+    } catch (e) {
+      Alert.alert('Unable to vote', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setPollBusy(false);
+    }
+  };
+
   const chooseReaction = async (type: Reaction) => {
+    if (reactionBusy) return;
+    const previousReaction = selectedReaction;
+    const previousCount = count;
+    const nextReaction = selectedReaction === type ? null : type;
+    setReactionBusy(true);
+    setSelectedReaction(nextReaction);
+    setCount(value => Math.max(0, value + (previousReaction ? (nextReaction ? 0 : -1) : (nextReaction ? 1 : 0))));
     try {
       const result = selectedReaction === type
         ? await apiRequest<{ count: number }>(
@@ -135,7 +174,10 @@ export function PostCard({
       setCount(result.count);
       setShowReactionPicker(false);
     } catch {
-      /* keep server state unchanged */
+      setSelectedReaction(previousReaction);
+      setCount(previousCount);
+    } finally {
+      setReactionBusy(false);
     }
   };
   const loadComments = async () => {
@@ -220,16 +262,23 @@ export function PostCard({
     } catch {}
   };
   const toggleSave = async () => {
+    if (saveBusy) return;
+    const next = !saved;
+    setSaveBusy(true);
+    setSaved(next);
+    onSaved?.(post.id, next);
     try {
-      const next = !saved;
       await apiRequest(
         `/posts/${post.id}/save`,
         { method: next ? 'POST' : 'DELETE' },
         accessToken,
       );
-      setSaved(next);
-      onSaved?.(post.id, next);
-    } catch {}
+    } catch {
+      setSaved(!next);
+      onSaved?.(post.id, !next);
+    } finally {
+      setSaveBusy(false);
+    }
   };
   const togglePin = async () => {
     try {
@@ -289,12 +338,12 @@ export function PostCard({
     } catch {}
   };
   const editPost = async () => {
-    if (!editBody.trim()) return;
+    if (!editBody.trim() && !post.poll && !post.interactive && !editMedia.length) return;
     setEditing(true);
     try {
       await apiRequest(
         `/posts/${post.id}`,
-        { method: 'PATCH', body: JSON.stringify({ body: editBody.trim() }) },
+        { method: 'PATCH', body: JSON.stringify({ body: editBody.trim(), audience: editAudience, location: editLocation.trim(), hashtags: editHashtags.split(/\s+/).filter(Boolean).map(tag => tag.startsWith('#') ? tag : `#${tag}`), accessibilityText: editAccessibility.trim(), contentWarning: editWarning.trim(), media: editMedia, poll: post.poll ? { question: editPollQuestion.trim(), options: editPollOptions.filter(Boolean).map(label => ({ label })), endsAt: post.poll.endsAt } : undefined, interactive: post.interactive }) },
         accessToken,
       );
       setShowEditModal(false);
@@ -352,7 +401,7 @@ export function PostCard({
             onPress={() => onOpenGroup?.(post.group!.id)}
             style={({pressed}) => [styles.groupContext, pressed && styles.groupContextPressed]}
           >
-            {resolvedGroupCover ? <Image source={{uri: resolvedGroupCover}} style={styles.groupContextImage} /> : <View style={styles.groupContextFallback}><Text style={styles.groupContextFallbackText}>{post.group.name.slice(0, 1).toUpperCase()}</Text></View>}
+            {resolvedGroupCover ? <Image source={{uri: resolvedGroupCover}} style={styles.groupContextImage} /> : <View style={styles.groupContextFallback}><Text style={styles.groupContextFallbackText}>{String(post.group.name ?? 'Group').slice(0, 1).toUpperCase()}</Text></View>}
             <View style={styles.groupContextCopy}><Text style={styles.groupContextName}>{post.group.name}</Text><Text style={styles.groupContextMeta}>{post.group.visibility === 'private' ? 'Private group' : 'Public group'}{post.group.memberCount ? ` · ${post.group.memberCount.toLocaleString()} members` : ''}</Text></View>
             <Text style={styles.groupContextChevron}>›</Text>
           </Pressable>
@@ -370,6 +419,8 @@ export function PostCard({
                 <Pressable
                   onPress={() => {
                     setEditBody(post.body);
+                    setEditAudience(post.audience ?? 'public'); setEditLocation(post.location ?? ''); setEditHashtags((post.hashtags ?? []).join(' ')); setEditAccessibility(post.accessibilityText ?? ''); setEditWarning(post.contentWarning ?? ''); setEditMedia(post.media ?? []);
+                    setEditPollQuestion(post.poll?.question ?? ''); setEditPollOptions((post.poll?.options ?? []).map(option => option.label));
                     setShowEditModal(true);
                     setShowMenu(false);
                   }}
@@ -424,6 +475,23 @@ export function PostCard({
         {recommendationReason ? <Text style={styles.recommendationReason}>✦ {recommendationReason}</Text> : null}
         {post.contentWarning ? <Text style={styles.contentWarning}>⚠ {post.contentWarning}</Text> : null}
         {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
+        {poll ? (
+          <View style={styles.pollCard}>
+            <Text style={styles.pollQuestion}>{poll.question}</Text>
+            {poll.options.map(option => {
+              const totalVotes = poll.options.reduce((total, item) => total + item.votes, 0);
+              const percentage = totalVotes ? Math.round((option.votes / totalVotes) * 100) : 0;
+              return (
+                <Pressable key={option._id} disabled={pollBusy || pollVoted} onPress={() => void votePoll(option._id)} style={styles.pollOption} accessibilityRole="button" accessibilityLabel={`Vote for ${option.label}`}>
+                  <View style={[styles.pollProgress, { width: `${Math.max(percentage, 4)}%` }]} />
+                  <Text style={styles.pollOptionLabel}>{option.label}</Text>
+                  <Text style={styles.pollVotes}>{percentage}%</Text>
+                </Pressable>
+              );
+            })}
+            <Text style={styles.pollMeta}>{pollBusy ? 'Saving your vote…' : pollVoted ? 'Your vote is recorded · ' : ''}{`${poll.options.reduce((total, option) => total + option.votes, 0)} votes`}{poll.endsAt ? ` · Ends ${new Date(poll.endsAt).toLocaleDateString()}` : ''}</Text>
+          </View>
+        ) : null}
         {post.repostOf ? (
           <View style={styles.repost}>
             <Text style={styles.repostLabel}>↻ Reposted from @{post.repostOf.author.username}</Text>
@@ -710,6 +778,15 @@ export function PostCard({
               autoFocus
               maxLength={5000}
             />
+            <Text style={styles.editLabel}>Audience</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChips}>{(['public','friends','close-friends','private'] as const).map(value => <Pressable key={value} onPress={() => setEditAudience(value)} style={[styles.editChip, editAudience === value && styles.editChipActive]}><Text style={[styles.editChipText, editAudience === value && styles.editChipTextActive]}>{value === 'close-friends' ? 'Close friends' : value[0].toUpperCase() + value.slice(1)}</Text></Pressable>)}</ScrollView>
+            <TextInput style={styles.editField} placeholder="Location" placeholderTextColor={colors.muted} value={editLocation} onChangeText={setEditLocation} />
+            <TextInput style={styles.editField} placeholder="#hashtags" placeholderTextColor={colors.muted} value={editHashtags} onChangeText={setEditHashtags} />
+            <TextInput style={styles.editField} placeholder="Content warning (optional)" placeholderTextColor={colors.muted} value={editWarning} onChangeText={setEditWarning} />
+            <TextInput style={styles.editField} placeholder="Alt text for media (optional)" placeholderTextColor={colors.muted} value={editAccessibility} onChangeText={setEditAccessibility} />
+            {post.poll ? <><Text style={styles.editLabel}>Poll</Text><TextInput style={styles.editField} placeholder="Poll question" placeholderTextColor={colors.muted} value={editPollQuestion} onChangeText={setEditPollQuestion} />{editPollOptions.map((option, index) => <TextInput key={index} style={styles.editField} placeholder={`Option ${index + 1}`} placeholderTextColor={colors.muted} value={option} onChangeText={value => setEditPollOptions(items => items.map((item, itemIndex) => itemIndex === index ? value : item))} />)}</> : null}
+            <Pressable style={styles.editMediaButton} onPress={async () => { try { const assets = await pickMedia('photo'); const uploaded = await Promise.all(assets.map(asset => uploadMedia(asset, accessToken))); setEditMedia(value => [...value, ...uploaded].slice(0, 10)); } catch {} }}><Text style={styles.editMediaText}>＋ Add photos or videos</Text></Pressable>
+            {editMedia.length ? <View style={styles.editMediaList}>{editMedia.map((media, index) => <View key={`${media.url}-${index}`} style={styles.editMediaRow}><Text style={styles.editMediaMeta} numberOfLines={1}>{media.type === 'video' ? 'Video' : 'Photo'} {index + 1}</Text><Pressable onPress={() => setEditMedia(items => items.filter((_, itemIndex) => itemIndex !== index))}><Text style={styles.editRemove}>Remove</Text></Pressable></View>)}</View> : null}
             <View style={styles.editActions}>
               <Pressable
                 onPress={() => setShowEditModal(false)}
@@ -719,10 +796,10 @@ export function PostCard({
               </Pressable>
               <Pressable
                 onPress={editPost}
-                disabled={editing || !editBody.trim()}
+                disabled={editing || (!editBody.trim() && !editMedia.length)}
                 style={[
                   styles.editSave,
-                  (editing || !editBody.trim()) && styles.editSaveDisabled,
+                  (editing || (!editBody.trim() && !editMedia.length)) && styles.editSaveDisabled,
                 ]}
               >
                 <Text style={styles.editSaveText}>
@@ -806,6 +883,13 @@ const styles = StyleSheet.create({
   groupContextName: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   groupContextMeta: { color: colors.muted, fontSize: 10, marginTop: 2 },
   groupContextChevron: { color: colors.muted, fontSize: 24, paddingHorizontal: spacing.xs },
+  pollCard: { marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  pollQuestion: { color: colors.ink, fontSize: 16, fontWeight: '900', marginBottom: spacing.sm },
+  pollOption: { minHeight: 42, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, justifyContent: 'center', overflow: 'hidden', paddingHorizontal: spacing.sm, marginTop: spacing.xs },
+  pollProgress: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.blueSoft },
+  pollOptionLabel: { color: colors.ink, fontSize: 13, fontWeight: '800', zIndex: 1, flex: 1 },
+  pollVotes: { position: 'absolute', right: spacing.sm, color: colors.muted, fontSize: 12, fontWeight: '800', zIndex: 1 },
+  pollMeta: { color: colors.muted, fontSize: 11, marginTop: spacing.sm },
   body: {
     fontSize: 16,
     lineHeight: 24,
@@ -1081,6 +1165,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  editLabel: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
+  editChips: { gap: spacing.xs, paddingVertical: spacing.xs },
+  editChip: { paddingHorizontal: spacing.sm, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  editChipActive: { backgroundColor: colors.blue },
+  editChipText: { color: colors.muted, fontSize: 12, fontWeight: '800' },
+  editChipTextActive: { color: '#fff' },
+  editField: { backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 10, color: colors.ink, marginTop: spacing.xs, borderWidth: 1, borderColor: colors.border },
+  editMediaButton: { borderRadius: radius.sm, borderWidth: 1, borderColor: colors.blue, padding: spacing.sm, alignItems: 'center', marginTop: spacing.sm },
+  editMediaText: { color: colors.blue, fontWeight: '900', fontSize: 13 },
+  editMediaMeta: { color: colors.muted, fontSize: 11, marginTop: 4 },
+  editMediaList: { marginTop: spacing.xs },
+  editMediaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 3 },
+  editRemove: { color: colors.danger, fontSize: 11, fontWeight: '800' },
   editActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

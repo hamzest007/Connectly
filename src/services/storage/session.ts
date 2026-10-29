@@ -9,6 +9,7 @@ export type Session = {
     email: string;
     avatarUrl?: string;
     accountType?: 'user' | 'page';
+    role?: string;
   };
   refreshToken: string;
 };

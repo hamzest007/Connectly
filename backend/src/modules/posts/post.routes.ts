@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {asyncHandler} from '../../common/asyncHandler';
 import {ok, HttpError} from '../../common/http';
 import {requireAuth, AuthRequest} from '../../middleware/auth';
-import {Comment, CommentReaction, HiddenPost, Post, PostView, Reaction, RecommendationFeedback, SnoozedUser} from './post.model';
+import {Comment, CommentReaction, HiddenPost, PollVote, Post, PostView, Reaction, RecommendationFeedback, SnoozedUser} from './post.model';
 import {SavedPost} from './saved-post.model';
 import {Collection} from './collection.model';
 import {Follow} from '../friends/follow.model';
@@ -44,7 +44,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const groupIds = await GroupMember.find({userId:req.userId,status:'active'}).distinct('groupId');
   if (feed === 'reels') {
     query.audience = 'public';
-    query.$or = [{authorId:{$ne:req.userId}},{authorId:req.userId,...ownPublisherFilter}];
+    query.$or = [{authorId:{$nin:[...blocked, ...snoozed, req.userId]}},{authorId:req.userId,...ownPublisherFilter}];
   } else if (feed === 'friends') {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId,...ownPublisherFilter}];
   } else if (feed === 'following') {
@@ -68,7 +68,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   return ok(res, {items, feed, nextCursor: posts.length === limit ? posts[posts.length - 1].createdAt : null});
 }));
 router.get('/saved', asyncHandler(async (req: AuthRequest, res) => {
-  const saved = await SavedPost.find({userId:req.userId}).sort({createdAt:-1}).populate({path:'postId',populate:[{path:'authorId',select:'name username avatarUrl'},{path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}}]}).limit(50);
+  const saved = await SavedPost.find({userId:req.userId}).sort({createdAt:-1}).populate({path:'postId',populate:[{path:'authorId',select:'name username avatarUrl'},{path:'groupId',select:'name visibility coverUrl memberCount'},{path:'repostOf',select:'body createdAt media authorId',populate:{path:'authorId',select:'name username avatarUrl'}}]}).limit(50);
   return ok(res, saved);
 }));
 router.get('/memories', asyncHandler(async (req:AuthRequest,res) => {
@@ -194,6 +194,6 @@ router.get('/:id/comments', asyncHandler(async (req, res) => ok(res, await Comme
 router.post('/:id/comments/:commentId/like', asyncHandler(async (req:AuthRequest,res)=>{const comment=await Comment.findOne({_id:req.params.commentId,postId:req.params.id});if(!comment)throw new HttpError(404,'Comment not found.');await CommentReaction.updateOne({commentId:comment._id,userId:req.userId},{$setOnInsert:{commentId:comment._id,userId:req.userId}},{upsert:true});comment.likeCount=await CommentReaction.countDocuments({commentId:comment._id});await comment.save();return ok(res,{liked:true,count:comment.likeCount});}));
 router.delete('/:id/comments/:commentId/like', asyncHandler(async (req:AuthRequest,res)=>{const comment=await Comment.findOne({_id:req.params.commentId,postId:req.params.id});if(!comment)throw new HttpError(404,'Comment not found.');await CommentReaction.deleteOne({commentId:comment._id,userId:req.userId});comment.likeCount=await CommentReaction.countDocuments({commentId:comment._id});await comment.save();return ok(res,{liked:false,count:comment.likeCount});}));
 router.post('/:id/comments/:commentId/pin', asyncHandler(async (req:AuthRequest,res)=>{const post=await Post.findOne({_id:req.params.id,authorId:req.userId});if(!post)throw new HttpError(403,'Only the post creator can pin comments.');await Comment.updateMany({postId:post._id},{pinned:false});const comment=await Comment.findOneAndUpdate({_id:req.params.commentId,postId:post._id},{pinned:true},{new:true});if(!comment)throw new HttpError(404,'Comment not found.');return ok(res,{pinned:true,comment});}));
-router.post('/:id/poll/:optionId/vote', asyncHandler(async (req:AuthRequest,res)=>{const post=await Post.findById(req.params.id);if(!post?.poll)throw new HttpError(404,'Poll not found.');if(post.poll.endsAt&&post.poll.endsAt<new Date())throw new HttpError(400,'This poll has ended.');const option=post.poll.options.id(String(req.params.optionId));if(!option)throw new HttpError(404,'Poll option not found.');option.votes=(option.votes??0)+1;await post.save();return ok(res,{poll:post.poll});}));
+router.post('/:id/poll/:optionId/vote', asyncHandler(async (req:AuthRequest,res)=>{const post=await Post.findById(req.params.id);if(!post?.poll)throw new HttpError(404,'Poll not found.');if(post.poll.endsAt&&post.poll.endsAt<new Date())throw new HttpError(400,'This poll has ended.');const option=post.poll.options.id(String(req.params.optionId));if(!option)throw new HttpError(404,'Poll option not found.');const existing=await PollVote.findOne({postId:post._id,userId:req.userId});if(existing)throw new HttpError(409,'You have already voted in this poll.');await PollVote.create({postId:post._id,userId:req.userId,optionId:option._id});option.votes=(option.votes??0)+1;await post.save();return ok(res,{poll:post.poll,voted:true});}));
 router.get('/:id/share-link', asyncHandler(async (req,res)=>{const post=await Post.findById(req.params.id).select('_id');if(!post)throw new HttpError(404,'Post not found.');return ok(res,{url:`connectly://post/${post._id}`});}));
 export default router;
