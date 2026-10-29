@@ -6,7 +6,7 @@ import { colors, radius, spacing } from '../../theme/tokens';
 
 type DetailKind = 'activity' | 'privacy' | 'notifications' | 'security' | 'content' | 'collections' | 'accessibility' | 'data' | 'support' | 'account' | 'archive' | 'creator' | 'close-friends' | 'monetization';
 type MenuUser = { id: string; name: string; username: string; avatarUrl?: string; accountType?: 'user' | 'page'; role?: string };
-type Props = { user: MenuUser; onProfile: () => void; onFriends: () => void; onFindPeople: () => void; onSaved: () => void; onMessages: () => void; onBlocked: () => void; onGroups: () => void; onReels: () => void; onDetail: (kind: DetailKind) => void; onBack?: () => void; onLogout: () => void };
+type Props = { user: MenuUser; onProfile: () => void; onFriends: () => void; onFindPeople: () => void; onSaved: () => void; onMessages: () => void; onBlocked: () => void; onGroups: () => void; onEvents: () => void; onCreatorIdeas: () => void; onReels: () => void; onDetail: (kind: DetailKind) => void; onBack?: () => void; onLogout: () => void };
 type Item = { title: string; description: string; icon: string; action: () => void };
 
 function ExpandableSection({ title, icon, children, palette, initiallyOpen = false }: { title: string; icon: string; children: React.ReactNode; palette: typeof colors; initiallyOpen?: boolean }) {
@@ -22,7 +22,7 @@ function ExpandableSection({ title, icon, children, palette, initiallyOpen = fal
   </View>;
 }
 
-export function SettingsScreen({ user, onProfile, onFriends, onFindPeople, onSaved, onMessages, onBlocked, onGroups, onReels, onDetail, onBack, onLogout }: Props) {
+export function SettingsScreen({ user, onProfile, onFriends, onFindPeople, onSaved, onMessages, onBlocked, onGroups, onEvents, onCreatorIdeas, onReels, onDetail, onBack, onLogout }: Props) {
   const systemDark = useColorScheme() === 'dark';
   const [showLogout, setShowLogout] = useState(false);
   const palette = systemDark ? { ...colors, canvas: '#101828', surface: '#182230', surfaceAlt: '#243244', ink: '#F8FAFC', inkLight: '#D0D5DD', muted: '#98A2B3', border: '#344054', borderLight: '#243244', blueSoft: '#1D3B70' } : colors;
@@ -47,6 +47,8 @@ export function SettingsScreen({ user, onProfile, onFriends, onFindPeople, onSav
   const shortcuts: Item[] = [
     { title: 'Friends', description: 'Your connections', icon: '♧', action: onFriends },
     { title: 'Groups', description: 'Communities you joined', icon: '⌂', action: onGroups },
+    { title: 'Events', description: 'Discover and manage events', icon: '◷', action: onEvents },
+    { title: 'Creator ideas', description: 'Prompts and planning inspiration', icon: '✦', action: onCreatorIdeas },
     { title: 'Saved posts', description: 'Your private bookmarks', icon: '▱', action: onSaved },
     { title: 'Reels', description: 'Short videos', icon: '▶', action: onReels },
   ];

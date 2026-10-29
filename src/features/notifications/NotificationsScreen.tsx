@@ -1,285 +1,44 @@
 import React from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Avatar } from '../../components/common/Avatar';
-import { colors, radius, shadow, spacing } from '../../theme/tokens';
 import { apiRequest } from '../../services/api/client';
+import { colors, radius, shadow, spacing } from '../../theme/tokens';
 
-type Notice = {
-  _id: string;
-  type?: string;
-  message: string;
-  createdAt: string;
-  readAt?: string | null;
-  entityType?: string;
-  entityId?: string;
-  actorId?: { name: string; username?: string; avatarUrl?: string };
-};
+export type Notice = { _id: string; type?: string; category?: 'engagement' | 'social' | 'messages' | 'account'; message: string; createdAt: string; readAt?: string | null; entityType?: string; entityId?: string; actorId?: { _id?: string; name: string; username?: string; avatarUrl?: string } };
+type Filter = 'all' | 'unread' | 'mentions' | 'follows';
+type Row = { kind: 'section'; title: string } | { kind: 'notice'; item: Notice };
+const endpoint = (profileType: 'personal' | 'page') => profileType === 'page' ? '/notifications/page' : '/notifications';
+const readEndpoint = (profileType: 'personal' | 'page', id: string) => `${endpoint(profileType)}/${id}/read`;
+const iconFor = (type?: string) => type === 'reaction' ? '♥' : type === 'comment' ? '◌' : type === 'follow' ? '＋' : type === 'friend_request' ? '♧' : type === 'message' ? '✉' : type === 'security' ? '⌑' : '✦';
+const filterMatch = (item: Notice, filter: Filter) => filter === 'all' || (filter === 'unread' ? !item.readAt : filter === 'mentions' ? ['mention', 'tag'].includes(item.type ?? '') : ['follow', 'friend_request', 'friend_accepted'].includes(item.type ?? ''));
+const sectionFor = (date: string) => { const value = new Date(date); const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); if (value.getTime() >= start) return 'Today'; if (value.getTime() >= start - 86400000) return 'Yesterday'; return 'Earlier'; };
+
+function NotificationSkeleton() { return <View accessibilityLabel="Loading notifications">{[0, 1, 2, 3].map(item => <View style={styles.skeleton} key={item}><View style={styles.skeletonAvatar} /><View style={styles.skeletonCopy}><View style={styles.skeletonLine} /><View style={styles.skeletonShort} /></View></View>)}</View>; }
+
 export function NotificationsScreen({ accessToken, profileType = 'personal', onOpenEntity }: { accessToken: string; profileType?: 'personal'|'page'; onOpenEntity?: (item: Notice) => void }) {
   const [items, setItems] = React.useState<Notice[]>([]);
+  const [filter, setFilter] = React.useState<Filter>('all');
   const [loading, setLoading] = React.useState(true);
-  const load = React.useCallback(() => {
-    setLoading(true);
-    void apiRequest<{ items: Notice[] }>(profileType === 'page' ? '/notifications/page' : '/notifications', {}, accessToken)
-      .then(result => setItems(result.items))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, [accessToken, profileType]);
-  React.useEffect(() => {
-    load();
-  }, [load]);
-  return (
-    <ScrollView
-      style={styles.page}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={loading}
-          onRefresh={load}
-          tintColor={colors.blue}
-        />
-      }
-    >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>YOUR COMMUNITY</Text>
-          <Text style={styles.title}>Notifications</Text>
-        </View>
-        <View style={styles.bell}>
-          <Text style={styles.bellIcon}>♡</Text>
-        </View>
-      </View>
-      <Text style={styles.subtitle}>
-        Stay close to the people and moments that matter.
-      </Text>
-      <View style={styles.summary}>
-        <View style={styles.summaryIcon}>
-          <Text style={styles.summaryIconText}>✦</Text>
-        </View>
-        <View style={styles.summaryCopy}>
-          <Text style={styles.summaryTitle}>
-            {items.length
-              ? `${items.length} recent updates`
-              : 'You’re all caught up'}
-          </Text>
-          <Text style={styles.summaryText}>
-            {items.length
-              ? 'New activity from your community'
-              : 'New reactions and follows will appear here.'}
-          </Text>
-        </View>
-      </View>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Text style={styles.sectionTitle}>Recent activity</Text>
-        {items.some(item => !item.readAt) ? (
-          <Pressable
-            onPress={() =>
-              void apiRequest(
-                profileType === 'page' ? '/notifications/page/read-all' : '/notifications/read-all',
-                { method: 'POST' },
-                accessToken,
-              ).then(() => void load())
-            }
-          >
-            <Text
-              style={{ color: colors.blue, fontWeight: '900', fontSize: 12 }}
-            >
-              Mark all read
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
-      {loading && !items.length ? (
-        <ActivityIndicator color={colors.blue} style={styles.loader} />
-      ) : items.length ? (
-        items.map(item => (
-          <Pressable
-            style={[styles.row, !item.readAt && styles.unread]}
-            key={item._id}
-            onPress={() =>
-              void apiRequest(
-                `/notifications/${item._id}/read`,
-                { method: 'PATCH' },
-                accessToken,
-              ).then(() => {
-                setItems(current => current.map(value => value._id === item._id ? {...value, readAt: new Date().toISOString()} : value));
-                onOpenEntity?.(item);
-              })
-            }
-          >
-            <Avatar
-              initials={(item.actorId?.name ?? 'C')
-                .split(' ')
-                .map(part => part[0])
-                .join('')
-                .slice(0, 2)}
-              avatarUrl={item.actorId?.avatarUrl}
-            />
-            <View style={styles.copy}>
-              <Text style={styles.text}>
-                {item.actorId?.name
-                  ? `${item.actorId.name} ${item.message}`
-                  : item.message}
-              </Text>
-              <Text style={styles.time}>
-                {new Date(item.createdAt).toLocaleString()}
-              </Text>
-            </View>
-            {!item.readAt ? <View style={styles.dot} /> : null}
-            <Pressable
-              onPress={() =>
-                void apiRequest(
-                  `/notifications/${item._id}`,
-                  { method: 'DELETE' },
-                  accessToken,
-                ).then(() =>
-                  setItems(current =>
-                    current.filter(value => value._id !== item._id),
-                  ),
-                )
-              }
-            >
-              <Text
-                style={{
-                  fontSize: 22,
-                  color: colors.muted,
-                  paddingLeft: spacing.sm,
-                }}
-              >
-                ×
-              </Text>
-            </Pressable>
-          </Pressable>
-        ))
-      ) : (
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>♡</Text>
-          <Text style={styles.emptyTitle}>Nothing new yet</Text>
-          <Text style={styles.emptyText}>
-            When someone interacts with your posts, you’ll see it here.
-          </Text>
-        </View>
-      )}
-    </ScrollView>
-  );
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+  const requestRef = React.useRef(false);
+  const load = React.useCallback(async (reset = true) => {
+    if (requestRef.current || (!reset && !nextCursor)) return;
+    requestRef.current = true; setError(''); if (reset) setRefreshing(items.length > 0); else setLoadingMore(true);
+    try { const cursor = reset ? '' : `&before=${encodeURIComponent(nextCursor as string)}`; const result = await apiRequest<{ items: Notice[]; nextCursor: string | null }>(`${endpoint(profileType)}?limit=30${cursor}`, {}, accessToken); setItems(current => { const incoming = reset ? result.items : [...current, ...result.items]; return incoming.filter((item, index, list) => list.findIndex(value => value._id === item._id) === index); }); setNextCursor(result.nextCursor); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Unable to load notifications.'); }
+    finally { requestRef.current = false; setLoading(false); setRefreshing(false); setLoadingMore(false); }
+  }, [accessToken, items.length, nextCursor, profileType]);
+  React.useEffect(() => { setItems([]); setNextCursor(null); void load(true); }, [profileType]);
+  const markRead = async (item: Notice) => { if (item.readAt) { onOpenEntity?.(item); return; } setItems(current => current.map(value => value._id === item._id ? { ...value, readAt: new Date().toISOString() } : value)); try { await apiRequest(readEndpoint(profileType, item._id), { method: 'PATCH' }, accessToken); onOpenEntity?.(item); } catch { setItems(current => current.map(value => value._id === item._id ? { ...value, readAt: null } : value)); } };
+  const markAll = async () => { const previous = items; setItems(current => current.map(item => ({ ...item, readAt: item.readAt ?? new Date().toISOString() }))); try { await apiRequest(profileType === 'page' ? '/notifications/page/read-all' : '/notifications/read-all', { method: 'POST' }, accessToken); } catch { setItems(previous); } };
+  const remove = async (id: string) => { const previous = items; setItems(current => current.filter(item => item._id !== id)); try { await apiRequest(`${endpoint(profileType)}/${id}`, { method: 'DELETE' }, accessToken); } catch { setItems(previous); } };
+  const visible = items.filter(item => filterMatch(item, filter)); const rows: Row[] = []; let currentSection = ''; visible.forEach(item => { const section = sectionFor(item.createdAt); if (section !== currentSection) { rows.push({ kind: 'section', title: section }); currentSection = section; } rows.push({ kind: 'notice', item }); }); const unreadCount = items.filter(item => !item.readAt).length;
+  return <View style={styles.page}><FlatList data={rows} keyExtractor={(row, index) => row.kind === 'section' ? `section-${row.title}` : `${row.item._id}-${index}`} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.blue} />} onEndReached={() => void load(false)} onEndReachedThreshold={0.5} ListHeaderComponent={<><View style={styles.header}><View><Text style={styles.eyebrow}>YOUR COMMUNITY</Text><Text style={styles.title}>Notifications</Text></View><View style={styles.headerBadge}><Text style={styles.headerIcon}>◇</Text>{unreadCount ? <Text style={styles.badge}>{unreadCount > 99 ? '99+' : unreadCount}</Text> : null}</View></View><Text style={styles.subtitle}>Stay close to the people and moments that matter.</Text><View style={styles.filters}>{(['all', 'unread', 'mentions', 'follows'] as Filter[]).map(value => <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.filterActive]}><Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{value[0].toUpperCase() + value.slice(1)}</Text></Pressable>)}</View><View style={styles.sectionBar}><Text style={styles.sectionTitle}>{filter === 'all' ? 'Recent activity' : `${filter[0].toUpperCase() + filter.slice(1)} activity`}</Text>{unreadCount ? <Pressable onPress={() => void markAll}><Text style={styles.markAll}>Mark all read</Text></Pressable> : null}</View></>} ListEmptyComponent={loading ? <NotificationSkeleton /> : error ? <View style={styles.empty}><Text style={styles.emptyTitle}>Couldn’t load notifications</Text><Text style={styles.emptyText}>{error}</Text><Pressable onPress={() => void load(true)} style={styles.retryButton}><Text style={styles.retryText}>Try again</Text></Pressable></View> : <View style={styles.empty}><Text style={styles.emptyIcon}>✓</Text><Text style={styles.emptyTitle}>{filter === 'all' ? 'You’re all caught up' : 'No matching notifications'}</Text><Text style={styles.emptyText}>New reactions, follows, mentions, and requests will appear here.</Text></View>} renderItem={({ item }) => item.kind === 'section' ? <Text style={styles.groupTitle}>{item.title}</Text> : <NotificationItem item={item.item} onPress={() => void markRead(item.item)} onDelete={() => void remove(item.item._id)} onAction={() => onOpenEntity?.(item.item)} />} ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.blue} style={styles.footer} /> : undefined} /></View>;
 }
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: spacing.md, paddingBottom: 120 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-  },
-  eyebrow: {
-    fontSize: 10,
-    letterSpacing: 1.3,
-    color: colors.blue,
-    fontWeight: '900',
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: '900',
-    color: colors.ink,
-    letterSpacing: -1.1,
-    marginTop: 4,
-  },
-  bell: {
-    width: 50,
-    height: 50,
-    borderRadius: 18,
-    backgroundColor: colors.peach,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow,
-  },
-  bellIcon: { fontSize: 25, color: '#EC7B45' },
-  subtitle: {
-    fontSize: 14,
-    color: colors.muted,
-    lineHeight: 21,
-    marginTop: 6,
-    marginBottom: spacing.lg,
-  },
-  summary: {
-    backgroundColor: colors.ink,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadow,
-  },
-  summaryIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    backgroundColor: colors.blue,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  summaryIconText: { color: '#fff', fontSize: 21 },
-  summaryCopy: { marginLeft: spacing.sm, flex: 1 },
-  summaryTitle: { color: '#fff', fontSize: 15, fontWeight: '900' },
-  summaryText: { color: 'rgba(255,255,255,.68)', fontSize: 12, marginTop: 3 },
-  sectionTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: colors.ink,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  loader: { marginTop: spacing.xl },
-  row: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow,
-  },
-  unread: { borderColor: colors.blue, backgroundColor: colors.blueSoft },
-  copy: { flex: 1, marginLeft: spacing.sm },
-  text: { color: colors.ink, fontWeight: '700', fontSize: 13, lineHeight: 19 },
-  time: { color: colors.muted, fontSize: 11, marginTop: 4 },
-  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.blue },
-  empty: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.xl,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow,
-  },
-  emptyIcon: { fontSize: 32, color: colors.blue },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: colors.ink,
-    marginTop: spacing.sm,
-  },
-  emptyText: {
-    color: colors.muted,
-    textAlign: 'center',
-    lineHeight: 20,
-    fontSize: 13,
-    marginTop: spacing.xs,
-  },
-});
+
+function NotificationItem({ item, onPress, onDelete, onAction }: { item: Notice; onPress: () => void; onDelete: () => void; onAction: () => void }) { const request = item.type === 'friend_request' || item.entityType === 'friend-request'; return <View style={[styles.row, !item.readAt && styles.unread]}><Pressable style={styles.rowPress} onPress={onPress}><View style={styles.avatarWrap}><Avatar initials={(item.actorId?.name ?? 'C').split(' ').map(part => part[0]).join('').slice(0, 2)} avatarUrl={item.actorId?.avatarUrl} /><View style={styles.typeIcon}><Text style={styles.typeIconText}>{iconFor(item.type)}</Text></View></View><View style={styles.copy}><Text style={styles.text}><Text style={styles.actor}>{item.actorId?.name ?? 'Connectly'}</Text>{` ${item.message}`}</Text><Text style={styles.time}>{new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(item.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>{request ? <View style={styles.requestActions}><Pressable style={styles.confirm} onPress={onAction}><Text style={styles.confirmText}>Review request</Text></Pressable></View> : null}</View>{!item.readAt ? <View style={styles.dot} /> : null}</Pressable><Pressable accessibilityLabel="Delete notification" onPress={onDelete} style={styles.delete}><Text style={styles.deleteText}>×</Text></Pressable></View>; }
+
+const styles = StyleSheet.create({ page: { flex: 1, backgroundColor: colors.canvas }, content: { padding: spacing.md, paddingBottom: 130 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm }, eyebrow: { color: colors.blue, fontSize: 10, letterSpacing: 1.5, fontWeight: '900' }, title: { color: colors.ink, fontSize: 32, fontWeight: '900', letterSpacing: -1, marginTop: 4 }, subtitle: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: spacing.lg }, headerBadge: { width: 52, height: 52, borderRadius: 18, backgroundColor: colors.blueSoft, alignItems: 'center', justifyContent: 'center', ...shadow }, headerIcon: { color: colors.blue, fontSize: 25 }, badge: { position: 'absolute', top: -4, right: -4, minWidth: 20, paddingHorizontal: 5, height: 20, borderRadius: 10, backgroundColor: colors.blue, color: '#fff', textAlign: 'center', lineHeight: 20, fontSize: 10, fontWeight: '900' }, filters: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md }, filter: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, filterActive: { backgroundColor: colors.blue, borderColor: colors.blue }, filterText: { color: colors.muted, fontSize: 12, fontWeight: '900' }, filterTextActive: { color: '#fff' }, sectionBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { color: colors.ink, fontSize: 19, fontWeight: '900', marginBottom: spacing.sm }, markAll: { color: colors.blue, fontSize: 12, fontWeight: '900', marginBottom: spacing.sm }, groupTitle: { color: colors.muted, fontSize: 12, fontWeight: '900', marginTop: spacing.md, marginBottom: spacing.xs, paddingHorizontal: 2 }, row: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.sm, marginBottom: spacing.sm, ...shadow }, unread: { backgroundColor: colors.blueSoft, borderColor: '#C8D7FF' }, rowPress: { flexDirection: 'row', alignItems: 'flex-start' }, avatarWrap: { position: 'relative' }, typeIcon: { position: 'absolute', right: -3, bottom: -3, width: 21, height: 21, borderRadius: 11, backgroundColor: colors.blue, borderWidth: 2, borderColor: colors.surface, alignItems: 'center', justifyContent: 'center' }, typeIconText: { color: '#fff', fontSize: 11, fontWeight: '900' }, copy: { flex: 1, marginLeft: spacing.sm }, text: { color: colors.ink, fontSize: 13, lineHeight: 19 }, actor: { fontWeight: '900' }, time: { color: colors.muted, fontSize: 11, marginTop: 5 }, dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.blue, marginTop: 7, marginLeft: spacing.xs }, delete: { paddingHorizontal: 4, paddingTop: 1 }, deleteText: { color: colors.muted, fontSize: 22, lineHeight: 22 }, requestActions: { flexDirection: 'row', marginTop: spacing.sm }, confirm: { backgroundColor: colors.blue, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 7 }, confirmText: { color: '#fff', fontSize: 11, fontWeight: '900' }, empty: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border, ...shadow }, emptyIcon: { color: colors.blue, fontSize: 30 }, emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: spacing.sm }, emptyText: { color: colors.muted, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: spacing.xs }, retryButton: { backgroundColor: colors.blue, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, marginTop: spacing.md }, retryText: { color: '#fff', fontWeight: '900' }, footer: { paddingVertical: spacing.lg }, skeleton: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm }, skeletonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceAlt }, skeletonCopy: { flex: 1, marginLeft: spacing.sm, gap: spacing.sm, paddingTop: 5 }, skeletonLine: { width: '85%', height: 12, borderRadius: 6, backgroundColor: colors.surfaceAlt }, skeletonShort: { width: '35%', height: 9, borderRadius: 5, backgroundColor: colors.surfaceAlt } });

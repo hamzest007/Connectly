@@ -24,18 +24,26 @@ export function CreatePostScreen({
   accessToken,
   onPublished,
   user,
+  initialMode = 'post',
+  initialInteraction = '',
+  initialMediaType,
+  initialText = '',
 }: {
   onClose: () => void;
   accessToken: string;
   onPublished: () => void;
   user: { name: string; avatarUrl?: string; accountType?: 'user' | 'page' };
+  initialMode?: Mode;
+  initialInteraction?: 'poll' | InteractiveType | '';
+  initialMediaType?: 'photo' | 'video';
+  initialText?: string;
 }) {
-  const [mode, setMode] = useState<Mode>('post');
-  const [text, setText] = useState('');
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [text, setText] = useState(initialText);
   const [audience, setAudience] = useState<Audience>('Friends');
   const [contentWarning, setContentWarning] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [interactionType, setInteractionType] = useState<'poll' | InteractiveType | ''>('');
+  const [interactionType, setInteractionType] = useState<'poll' | InteractiveType | ''>(initialInteraction);
   const [interactionPrompt, setInteractionPrompt] = useState('');
   const [interactionOptions, setInteractionOptions] = useState(['', '']);
   const [interactionAnswer, setInteractionAnswer] = useState('');
@@ -86,6 +94,9 @@ export function CreatePostScreen({
       setError(e instanceof Error ? e.message : 'Unable to select media.');
     }
   };
+  useEffect(() => {
+    if (initialMediaType) void choose(initialMediaType);
+  }, [initialMediaType]);
   const saveDraft = async () => {
     if (!text.trim() && !media.length) {
       setError('Add text or media before saving a draft.');

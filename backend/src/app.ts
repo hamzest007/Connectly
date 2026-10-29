@@ -21,6 +21,8 @@ import conversationRoutes from './modules/conversations/conversation.routes';
 import groupRoutes from './modules/groups/group.routes';
 import marketplaceRoutes from './modules/marketplace/marketplace.routes';
 import platformRoutes from './modules/platform/platform.routes';
+import eventRoutes from './modules/events/event.routes';
+import creatorIdeaRoutes from './modules/creator-ideas/creator-idea.routes';
 
 export const app = express();
 app.use(helmet());
@@ -37,6 +39,8 @@ app.use('/api/v1/conversations', conversationRoutes);
 app.use('/api/v1/groups', groupRoutes);
 app.use('/api/v1/marketplace', marketplaceRoutes);
 app.use('/api/v1/platform', platformRoutes);
+app.use('/api/v1/events', eventRoutes);
+app.use('/api/v1/creator-ideas', creatorIdeaRoutes);
 app.use('/api/v1/friends', friendRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/notifications', notificationRoutes);

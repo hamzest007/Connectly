@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FeedScreen } from '../features/feed/FeedScreen';
 import { CreatePostScreen } from '../features/posts/CreatePostScreen';
+import { CreateHubScreen } from '../features/create/CreateHubScreen';
 import { FriendsScreen } from '../features/friends/FriendsScreen';
 import { FriendRequestsScreen } from '../features/friends/FriendRequestsScreen';
 import { NotificationsScreen } from '../features/notifications/NotificationsScreen';
@@ -14,9 +15,13 @@ import { SearchScreen } from '../features/search/SearchScreen';
 import { MessagesScreen } from '../features/messages/MessagesScreen';
 import { BlockedAccountsScreen } from '../features/settings/BlockedAccountsScreen';
 import { GroupsScreen } from '../features/groups/GroupsScreen';
+import { CreateGroupScreen } from '../features/groups/CreateGroupScreen';
+import { EventsScreen } from '../features/events/EventsScreen';
+import { CreatorIdeasScreen } from '../features/creator/CreatorIdeasScreen';
 import { SettingsDetailScreen } from '../features/settings/SettingsDetailScreen';
 import { SplashScreen } from '../components/common/SplashScreen';
-import { colors, radius, shadow, spacing } from '../theme/tokens';
+import { BottomTabBar, BottomTab } from '../components/navigation/BottomTabBar';
+import { colors, shadow, spacing } from '../theme/tokens';
 import { apiRequest } from '../services/api/client';
 import {
   clearSession,
@@ -32,14 +37,8 @@ type Tab =
   | 'friends'
   | 'create'
   | 'notifications'
+  | 'profile'
   | 'menu';
-const tabs: { key: Tab; icon: string; label: string }[] = [
-  { key: 'home', icon: '⌂', label: 'Home' },
-  { key: 'reels', icon: '◉', label: 'Reels' },
-  { key: 'create', icon: '+', label: 'Create' },
-  { key: 'notifications', icon: '◇', label: 'Notifications' },
-  { key: 'menu', icon: '☰', label: 'Menu' },
-];
 
 export function ConnectlyApp() {
   const [session, setSession] = useState<Session | null>(null);
@@ -48,6 +47,9 @@ export function ConnectlyApp() {
   const [platformConfig, setPlatformConfig] = useState<{announcement: string; flags: Record<string, boolean>} | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [tab, setTab] = useState<Tab>('home');
+  const [createMode, setCreateMode] = useState<'post' | 'story' | 'reel' | null>(null);
+  const [createPrompt, setCreatePrompt] = useState('');
+  const [createOptions, setCreateOptions] = useState<{ interaction?: 'poll'; media?: 'photo' | 'video' }>({});
   const [feedMode, setFeedMode] = useState<'for-you' | 'saved'>('for-you');
   const [focusPostId, setFocusPostId] = useState<string | undefined>();
   const [pendingGroupId, setPendingGroupId] = useState<string | undefined>();
@@ -59,7 +61,7 @@ export function ConnectlyApp() {
   const [focusComments, setFocusComments] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [screen, setScreen] = useState<
-    'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'settings' | 'search' | 'friend-requests'
+    'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'create-group' | 'events' | 'creator-ideas' | 'settings' | 'search' | 'friend-requests'
   >('main');
   const [settingsKind, setSettingsKind] = useState<
     | 'activity'
@@ -245,8 +247,31 @@ export function ConnectlyApp() {
         <GroupsScreen
           accessToken={session.accessToken}
           initialGroupId={pendingGroupId}
+          onCreateGroup={() => { setPendingGroupId(undefined); setScreen('create-group'); }}
           onBack={() => { setPendingGroupId(undefined); setScreen('main'); setTab('menu'); }}
         />
+      </SafeAreaView>
+    );
+  if (screen === 'create-group')
+    return (
+      <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
+        <CreateGroupScreen
+          accessToken={session.accessToken}
+          onBack={() => setScreen('groups')}
+          onCreated={group => { setPendingGroupId(group._id); setScreen('groups'); }}
+        />
+      </SafeAreaView>
+    );
+  if (screen === 'events')
+    return (
+      <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
+        <EventsScreen accessToken={session.accessToken} onBack={() => { setScreen('main'); setTab('menu'); }} />
+      </SafeAreaView>
+    );
+  if (screen === 'creator-ideas')
+    return (
+      <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
+        <CreatorIdeasScreen accessToken={session.accessToken} onBack={() => { setScreen('main'); setTab('menu'); }} onCreate={(kind, prompt) => { setCreatePrompt(prompt); setCreateOptions({}); setCreateMode(kind); setScreen('main'); setTab('create'); }} />
       </SafeAreaView>
     );
   if (screen === 'settings')
@@ -295,17 +320,37 @@ export function ConnectlyApp() {
           return next;
         })}
       />
-    ) : tab === 'create' ? (
-      <CreatePostScreen
+    ) : tab === 'profile' ? (
+      <ProfileScreen
         user={session.user}
         accessToken={session.accessToken}
-        onPublished={() => setRefreshKey(value => value + 1)}
-        onClose={() => setTab('home')}
+        onBack={() => setTab('home')}
+        onSettings={() => {
+          setScreen('main');
+          setTab('menu');
+        }}
+        onAccountUpdated={updated => setSession(current => {
+          if (!current) return current;
+          const next = {...current, user: {...current.user, ...updated}};
+          void saveSession(next);
+          return next;
+        })}
       />
+    ) : tab === 'create' ? (
+      createMode ? <CreatePostScreen
+        user={session.user}
+        accessToken={session.accessToken}
+        initialMode={createMode}
+        initialInteraction={createOptions.interaction}
+        initialMediaType={createOptions.media}
+        initialText={createPrompt}
+        onPublished={() => { setRefreshKey(value => value + 1); setCreateMode(null); setTab('home'); }}
+        onClose={() => setCreateMode(null)}
+      /> : <CreateHubScreen user={session.user} onCreate={(mode, options) => { setCreateOptions(options ?? {}); setCreateMode(mode); }} />
     ) : tab === 'reels' ? (
       <ReelsScreen
         accessToken={session.accessToken}
-        onCreate={() => setTab('create')}
+        onCreate={() => { setCreatePrompt(''); setCreateOptions({}); setCreateMode('reel'); setTab('create'); }}
       />
     ) : tab === 'friends' ? (
       <FriendsScreen
@@ -351,6 +396,8 @@ export function ConnectlyApp() {
         onMessages={() => { setMessageReturnTab('menu'); setScreen('messages'); }}
         onBlocked={() => { setBlockedReturn('main'); setScreen('blocked'); setTab('menu'); }}
         onGroups={() => setScreen('groups')}
+        onEvents={() => setScreen('events')}
+        onCreatorIdeas={() => setScreen('creator-ideas')}
         onReels={() => setTab('reels')}
         onDetail={kind => {
           setSettingsReturnTab('menu');
@@ -390,31 +437,19 @@ export function ConnectlyApp() {
     <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
       {content}
       {screen === 'main' && (
-        <View style={styles.nav}>
-          {tabs.map(item => (
-            <Pressable
-              key={item.key}
-              onPress={() => setTab(item.key)}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              style={({pressed}) => [styles.navItem, tab === item.key && styles.navItemActive, item.key === 'create' && styles.navCreateItem, pressed && styles.navItemPressed]}
-            >
-              <View style={styles.iconWrap}>
-                {item.key === 'create' ? <View style={styles.createIcon}><Text style={styles.createIconText}>+</Text></View> : <Text style={[styles.icon, tab === item.key && styles.active]}>{item.icon}</Text>}
-                {item.key === 'notifications' && unreadNotifications > 0 ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={[styles.label, tab === item.key && styles.active, item.key === 'create' && styles.createLabel]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <BottomTabBar
+          activeTab={tab === 'profile' ? 'menu' : (tab as BottomTab)}
+          unreadCount={unreadNotifications}
+          onTabPress={next => {
+            setScreen('main');
+            if (next === 'create') {
+              setCreatePrompt('');
+              setCreateOptions({});
+              setCreateMode(null);
+            }
+            setTab(next);
+          }}
+        />
       )}
     </SafeAreaView>
   );
@@ -444,69 +479,5 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontWeight: '700',
     marginTop: spacing.sm,
-  },
-  nav: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 14,
-    height: 88,
-    backgroundColor: colors.surface,
-    borderRadius: 27,
-    borderWidth: 1,
-    borderColor: colors.border,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    shadowColor: '#27305F',
-    shadowOpacity: 0.14,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 10,
-  },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    minWidth: 60,
-    height: 70,
-    borderRadius: 22,
-    marginHorizontal: 2,
-  },
-  navItemActive: { backgroundColor: colors.blueSoft },
-  navCreateItem: { marginTop: -12 },
-  navItemPressed: { opacity: 0.72, transform: [{scale: 0.96}] },
-  iconWrap: { alignItems: 'center', justifyContent: 'center', minHeight: 38 },
-  icon: { fontSize: 23, color: colors.muted, height: 29, lineHeight: 28, fontWeight: '500' },
-  createIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', marginBottom: 3, borderWidth: 4, borderColor: colors.canvas, shadowColor: colors.blue, shadowOpacity: .36, shadowRadius: 12, shadowOffset: {width: 0, height: 6}, elevation: 8 },
-  createIconText: { color: '#fff', fontSize: 32, fontWeight: '300', lineHeight: 35 },
-  label: {
-    fontSize: 10,
-    color: colors.muted,
-    fontWeight: '800',
-    letterSpacing: 0.1,
-  },
-  active: { color: colors.blue },
-  createLabel: { color: colors.ink, fontWeight: '900' },
-  badge: {
-    position: 'absolute',
-    right: -10,
-    top: -4,
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 3,
-    borderRadius: 8,
-    backgroundColor: colors.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 8,
-    fontWeight: '900',
-    textAlign: 'center',
   },
 });

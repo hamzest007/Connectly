@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -60,6 +61,7 @@ export function MessagesScreen({
   const [newChat, setNewChat] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const [listSearch, setListSearch] = React.useState('');
+  const [conversationFilter, setConversationFilter] = React.useState<'all'|'unread'|'groups'|'requests'>('all');
   const [people, setPeople] = React.useState<Array<{_id: string; name: string; username: string; avatarUrl?: string}>>([]);
   const [encryptionReady, setEncryptionReady] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
@@ -168,7 +170,11 @@ export function MessagesScreen({
     const lastSeen = conversationPartner(item)?.lastSeenAt;
     return Boolean(lastSeen && Date.now() - new Date(lastSeen).getTime() < 5 * 60 * 1000);
   };
-  const filteredItems = items.filter(item => `${conversationTitle(item)} ${conversationMeta(item)}`.toLowerCase().includes(listSearch.trim().toLowerCase()));
+  const filteredItems = items.filter(item => {
+    const matchesSearch = `${conversationTitle(item)} ${conversationMeta(item)}`.toLowerCase().includes(listSearch.trim().toLowerCase());
+    const status = item.participants.find(part => part.userId._id === currentUserId)?.status;
+    return matchesSearch && (conversationFilter === 'all' || (conversationFilter === 'unread' && Boolean(item.unreadCount)) || (conversationFilter === 'groups' && item.type === 'group') || (conversationFilter === 'requests' && status === 'requested'));
+  });
   const requestItems = filteredItems.filter(item => item.participants.find(part => part.userId._id === currentUserId)?.status === 'requested');
   const acceptRequest = async (item: Conversation) => {
     const requester = item.participants.find(part => part.userId._id !== currentUserId);
@@ -283,6 +289,7 @@ export function MessagesScreen({
         <Text style={styles.sectionLabel}>Chats</Text>
         <TextInput value={listSearch} onChangeText={setListSearch} placeholder="Search messages" placeholderTextColor={colors.muted} style={styles.listSearch} />
       </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>{(['all','unread','groups','requests'] as const).map(item => <Pressable key={item} onPress={() => setConversationFilter(item)} style={[styles.filterChip, conversationFilter === item && styles.filterChipActive]}><Text style={[styles.filterChipText, conversationFilter === item && styles.filterChipTextActive]}>{item[0].toUpperCase() + item.slice(1)}</Text></Pressable>)}</ScrollView>
       {requestItems.length ? <View style={styles.requestBanner}><Text style={styles.requestTitle}>Message requests · {requestItems.length}</Text>{requestItems.map(item => <View key={item._id} style={styles.requestRow}><Text style={styles.requestName}>{conversationTitle(item)}</Text><Pressable onPress={() => void acceptRequest(item)}><Text style={styles.acceptText}>Accept</Text></Pressable></View>)}</View> : null}
       {loading ? (
         <ActivityIndicator color={colors.blue} style={styles.loader} />
@@ -360,6 +367,11 @@ const styles = StyleSheet.create({
   },
   list: { paddingBottom: 120 },
   listSearchRow: { marginBottom: spacing.md },
+  filterRow: { gap: spacing.sm, paddingBottom: spacing.md },
+  filterChip: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
+  filterChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  filterChipText: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  filterChipTextActive: { color: '#fff' },
   sectionLabel: { color: colors.ink, fontSize: 18, fontWeight: '900', marginBottom: spacing.sm },
   listSearch: { height: 42, backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.md, color: colors.ink, borderWidth: 1, borderColor: colors.border },
   requestBanner: { backgroundColor: colors.blueSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },

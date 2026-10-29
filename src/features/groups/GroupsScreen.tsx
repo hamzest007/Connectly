@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Image,
+  RefreshControl,
   Share,
   Pressable,
   ScrollView,
@@ -46,15 +47,18 @@ type GroupPost = {
   status?: string;
   media?: {url: string; type: 'image'|'video'}[];
   isAnnouncement?: boolean;
+  poll?: {question?: string; options?: {label: string; votes?: number}[]};
 };
 export function GroupsScreen({
   accessToken,
   onBack,
   initialGroupId,
+  onCreateGroup,
 }: {
   accessToken: string;
   onBack: () => void;
   initialGroupId?: string;
+  onCreateGroup?: () => void;
 }) {
   const [groups, setGroups] = React.useState<Group[]>([]);
   const [members, setMembers] = React.useState<Membership[]>([]);
@@ -63,6 +67,9 @@ export function GroupsScreen({
   const [body, setBody] = React.useState('');
   const [query, setQuery] = React.useState('');
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [loadError, setLoadError] = React.useState('');
+  const [listTab, setListTab] = React.useState<'discover'|'mine'|'invitations'>('discover');
   const [creating, setCreating] = React.useState(false);
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -81,6 +88,7 @@ export function GroupsScreen({
   const initialGroupAttempt = React.useRef<string | undefined>(undefined);
   const load = React.useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const data = await apiRequest<{
         groups: Group[];
@@ -92,7 +100,8 @@ export function GroupsScreen({
       );
       setGroups(data.groups);
       setMembers(data.memberships);
-    } catch {
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Unable to load groups.');
     } finally {
       setLoading(false);
     }
@@ -263,6 +272,12 @@ export function GroupsScreen({
       : activeTab === 'Topics'
         ? posts.filter(post => !post.isAnnouncement)
         : [];
+  const displayGroups = groups.filter(group => {
+    const membership = members.find(item => item.groupId === group._id);
+    if (listTab === 'mine') return membership?.status === 'active';
+    if (listTab === 'invitations') return membership?.status === 'requested';
+    return true;
+  });
   const create = async () => {
     if (!name.trim()) return;
     try {
@@ -407,13 +422,14 @@ export function GroupsScreen({
           <Text style={styles.back}>‹</Text>
         </Pressable>
         <Text style={styles.title}>Groups & events</Text>
-        <Pressable onPress={() => setCreating(true)}>
+        <Pressable onPress={onCreateGroup ?? (() => setCreating(true))}>
           <Text style={styles.add}>＋</Text>
         </Pressable>
       </View>
       <Text style={styles.subtitle}>
         Join communities and share posts with members.
       </Text>
+      <View style={styles.listTabs}>{(['discover', 'mine', 'invitations'] as const).map(item => <Pressable key={item} onPress={() => setListTab(item)} style={[styles.listTab, listTab === item && styles.listTabActive]}><Text style={[styles.listTabText, listTab === item && styles.listTabTextActive]}>{item === 'mine' ? 'Your groups' : item}</Text></Pressable>)}</View>
       <View style={styles.hero}>
         <View style={styles.heroCopy}>
           <Text style={styles.heroEyebrow}>YOUR COMMUNITIES</Text>
@@ -431,10 +447,13 @@ export function GroupsScreen({
       />
       {loading ? (
         <ActivityIndicator color={colors.blue} />
+      ) : loadError ? (
+        <View style={styles.emptyState}><Text style={styles.empty}>{loadError}</Text><Pressable style={styles.retryButton} onPress={() => void load()}><Text style={styles.primaryText}>Retry</Text></Pressable></View>
       ) : (
         <FlatList
-          data={groups}
+          data={displayGroups}
           keyExtractor={item => item._id}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load().finally(() => setRefreshing(false)); }} tintColor={colors.blue} />}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const joined = members.some(
@@ -442,7 +461,7 @@ export function GroupsScreen({
             );
             return (
               <Pressable style={styles.card} onPress={() => void open(item)}>
-                <View style={styles.cardAccent} />
+                {item.coverUrl ? <Image source={{uri: item.coverUrl}} style={styles.cardCover} /> : <View style={styles.cardAccent} />}
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{item.name[0]}</Text>
                 </View>
@@ -465,7 +484,7 @@ export function GroupsScreen({
                     }}
                     style={styles.join}
                   >
-                    <Text style={styles.joinText}>Join</Text>
+                    <Text style={styles.joinText}>{members.find(value => value.groupId === item._id)?.status === 'requested' ? 'Requested' : item.visibility === 'public' ? 'Join' : 'Request'}</Text>
                   </Pressable>
                 )}
               </Pressable>
@@ -491,6 +510,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: '900', color: colors.ink, flex: 1, letterSpacing: -0.6 },
   add: { fontSize: 28, color: colors.blue },
   subtitle: { fontSize: 13, color: colors.muted, marginBottom: spacing.md },
+  listTabs: { flexDirection: 'row', backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, padding: 3, marginBottom: spacing.md },
+  listTab: { flex: 1, alignItems: 'center', borderRadius: radius.pill, paddingVertical: 9 },
+  listTabActive: { backgroundColor: colors.blue },
+  listTabText: { color: colors.muted, fontSize: 11, fontWeight: '800', textTransform: 'capitalize' },
+  listTabTextActive: { color: '#fff' },
   sectionHeading: { color: colors.ink, fontSize: 15, fontWeight: '900', marginTop: spacing.md, marginBottom: spacing.sm },
   infoBox: { backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -570,6 +594,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: colors.blue },
+  cardCover: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.blueSoft },
   avatar: {
     width: 48,
     height: 48,
@@ -591,6 +616,8 @@ const styles = StyleSheet.create({
   },
   joinText: { color: '#fff', fontWeight: '900', fontSize: 11 },
   open: { color: colors.success, fontSize: 11, fontWeight: '900' },
+  emptyState: { alignItems: 'center', paddingVertical: spacing.xl },
+  retryButton: { backgroundColor: colors.blue, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   composer: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
