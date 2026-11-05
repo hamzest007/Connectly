@@ -66,4 +66,4 @@ npm run lint
 
 ## Project status
 
-This repository is currently private. The README documents the product scope without publishing credentials, service URLs, or private deployment details.
+This repository is public. The README documents the product scope without publishing credentials, service URLs, or private deployment details.
