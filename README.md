@@ -57,6 +57,10 @@ npm install
 npm run dev
 ```
 
+## Local configuration
+
+Create environment files locally for the backend and admin center as needed. Environment files are intentionally excluded from version control. Use local values for MongoDB, JWT signing secrets, Cloudinary settings, and seed credentials; never commit those values to GitHub.
+
 ## Test and lint
 
 ```bash
