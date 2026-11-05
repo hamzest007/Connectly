@@ -9,7 +9,7 @@ async function seed() {
   const seedPassword = process.env.SEED_ADMIN_PASSWORD;
   if (!seedPassword || seedPassword.length < 12) throw new Error('Set SEED_ADMIN_PASSWORD to a unique password of at least 12 characters before seeding.');
   const passwordHash = await bcrypt.hash(seedPassword, 12);
-  await User.create({name: 'Connectly Administrator', username: 'connectlyadmin', email: 'admin@connectly.local', passwordHash, avatarUrl: '', role:'admin', bio: 'Platform administration account.'});
+  await User.create({name: 'Connectly Administrator', username: 'connectlyadmin', normalizedUsername: 'connectlyadmin', email: 'admin@connectly.local', normalizedEmail: 'admin@connectly.local', passwordHash, avatarUrl: '', role:'admin', bio: '', acceptedTermsAt: new Date(), acceptedTermsVersion: '2026-01'});
   console.log('Seed complete. Admin account created. Use the configured seed password.');
   process.exit(0);
 }

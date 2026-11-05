@@ -17,8 +17,8 @@ const validate = (schema: {parse: (value: unknown) => unknown}) => (req: any, _r
   try { req.body = schema.parse(req.body); next(); } catch (error) { next(error); }
 };
 
-const accessToken = (id: string) => jwt.sign({}, env.accessSecret, {subject: id, expiresIn: '15m'});
-const publicUser = (user: any) => ({id: user._id, email: user.email, username: user.username, name: user.name, bio: user.bio, avatarUrl: user.avatarUrl, phone: user.phone, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, role: user.role, status: user.status});
+const accessToken = (id: string) => jwt.sign({}, env.accessSecret, {subject: id, issuer: env.jwtIssuer, audience: env.jwtAudience, expiresIn: '15m'});
+const publicUser = (user: any) => ({id: user._id, email: user.email, username: user.username, name: user.name, bio: user.bio, avatarUrl: user.avatarUrl, phone: user.phone, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, role: user.role, status: user.status, accountStatus: user.accountStatus});
 const issueRefresh = async (userId: string) => {
   const raw = crypto.randomBytes(48).toString('hex');
   await RefreshToken.create({userId, tokenHash: crypto.createHash('sha256').update(raw).digest('hex'), expiresAt: new Date(Date.now() + 30 * 86400000)});
@@ -26,12 +26,24 @@ const issueRefresh = async (userId: string) => {
 };
 
 router.post('/register', authLimiter, validate(registerSchema), asyncHandler(async (req, res) => {
-  const {email, password, name, username} = req.body;
-  const exists = await User.exists({$or: [{email}, {username}]});
-  if (exists) throw new HttpError(409, 'Email or username is already in use.');
-  const user = await User.create({email, username, name, avatarUrl: '', passwordHash: await bcrypt.hash(password, 12)});
+  const {email, password, username, phoneNumber, acceptedTerms} = req.body;
+  const name = String(req.body.fullName ?? req.body.name ?? '').trim();
+  const normalizedEmail = email.toLowerCase();
+  const normalizedUsername = username.toLowerCase();
+  const exists = await User.findOne({$or: [{normalizedEmail}, {normalizedUsername}, {email: normalizedEmail}, {username: normalizedUsername}]}).select('_id email username');
+  if (exists) {
+    if (exists.email === normalizedEmail || (exists as any).normalizedEmail === normalizedEmail) throw new HttpError(409, 'Email is already in use.');
+    throw new HttpError(409, 'Username is already taken.');
+  }
+  const user = await User.create({email: normalizedEmail, normalizedEmail, username: normalizedUsername, normalizedUsername, name, fullName: name, avatarUrl: '', phone: phoneNumber ?? '', phoneNumber: phoneNumber ?? '', passwordHash: await bcrypt.hash(password, 12), acceptedTermsAt: acceptedTerms ? new Date() : null, acceptedTermsVersion: '2026-01', accountStatus: 'active'});
   const refreshToken = await issueRefresh(String(user._id));
   return ok(res, {user: publicUser(user), accessToken: accessToken(String(user._id)), refreshToken}, 201);
+}));
+router.get('/check-username/:username', authLimiter, asyncHandler(async (req, res) => {
+  const username = String(req.params.username ?? '').trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,30}$/.test(username)) return ok(res, {available: false, reason: 'Use 3–30 letters, numbers, or underscores.'});
+  const exists = await User.exists({$or: [{normalizedUsername: username}, {username}]});
+  return ok(res, {available: !exists});
 }));
 router.post('/login', authLimiter, validate(loginSchema), asyncHandler(async (req, res) => {
   const identifier = req.body.identifier.toLowerCase();

@@ -17,6 +17,8 @@ export const env = {
   clientOrigins: (process.env.CLIENT_ORIGIN ?? 'http://localhost:8081,http://localhost:5173').split(',').map(value => value.trim()),
   accessSecret: secret('JWT_ACCESS_SECRET', 'development-access-secret-change-me'),
   refreshSecret: secret('JWT_REFRESH_SECRET', 'development-refresh-secret-change-me'),
+  jwtIssuer: process.env.JWT_ISSUER ?? 'connectly-api',
+  jwtAudience: process.env.JWT_AUDIENCE ?? 'connectly-mobile',
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME ?? '',
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY ?? '',
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET ?? '',

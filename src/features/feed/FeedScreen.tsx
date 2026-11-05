@@ -29,9 +29,8 @@ import { Post } from '../../types/social';
 type FeedMode =
   | 'for-you'
   | 'following'
-  | 'friends'
   | 'latest'
-  | 'trending'
+  | 'groups'
   | 'saved';
 type ApiPost = {
   _id: string;
@@ -73,9 +72,8 @@ function FeedSkeleton() {
 const modes: { key: FeedMode; label: string }[] = [
   { key: 'for-you', label: 'For you' },
   { key: 'following', label: 'Following' },
-  { key: 'friends', label: 'Friends' },
   { key: 'latest', label: 'Latest' },
-  { key: 'trending', label: 'Trending' },
+  { key: 'groups', label: 'Groups' },
   { key: 'saved', label: 'Saved' },
 ];
 
@@ -240,7 +238,7 @@ export function FeedScreen({
   React.useEffect(() => {
     setCursor(null);
     void load(true);
-  }, [mode, refreshKey, load]);
+  }, [mode, refreshKey]);
   React.useEffect(() => {
     if (selectedStory) {
       setVideoPaused(false);
@@ -287,110 +285,16 @@ export function FeedScreen({
   };
   const header = (
     <View>
-      <View style={styles.topBar}>
-        <View>
-          <Text style={styles.kicker}>YOUR SPACE</Text>
-          <Text style={styles.greeting}>
-            Good morning, {user.name.split(' ')[0]}
-          </Text>
-        </View>
+      <View style={styles.appBar}>
+        <Text style={styles.logo}>connectly</Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={onOpenMessages} style={styles.chatButton} accessibilityLabel="Open messages">
-            <View style={styles.chatGlyph}><Text style={styles.chatDots}>•••</Text></View>
+          <Pressable onPress={onOpenSearch} style={styles.headerButton} accessibilityLabel="Search">
+            <Text style={styles.headerButtonText}>⌕</Text>
           </Pressable>
-          <Pressable
-            onPress={() =>
-              onOpenProfile?.({ id: user.id, name: user.name, username: '' })
-            }
-            style={styles.profileButton}
-          >
-            <Avatar initials={initials} avatarUrl={user.avatarUrl} size={42} />
-            <View style={styles.onlineDot} />
+          <Pressable onPress={onOpenMessages} style={styles.headerButton} accessibilityLabel="Messages">
+            <Text style={styles.headerButtonText}>✉</Text>
           </Pressable>
         </View>
-      </View>
-      <View style={styles.preferenceHint}>
-        <Text style={styles.preferenceHintText}>{recommendationPreferences.chronological ? 'Chronological feed' : 'Personalized feed'} · Manage in Content preferences</Text>
-      </View>
-      <Pressable style={styles.homeSearch} onPress={onOpenSearch}>
-        <Text style={styles.homeSearchIcon}>⌕</Text>
-        <TextInput
-          editable={false}
-          pointerEvents="none"
-          placeholder="Search people, posts or hashtags"
-          placeholderTextColor={colors.muted}
-          style={styles.homeSearchInput}
-        />
-      </Pressable>
-      {announcement || maintenanceMode ? (
-        <View style={styles.platformNotice}>
-          <Text style={styles.platformNoticeIcon}>{maintenanceMode ? '⚙' : '✦'}</Text>
-          <View style={styles.platformNoticeCopy}>
-            <Text style={styles.platformNoticeTitle}>
-              {maintenanceMode ? 'Platform notice' : 'Connectly update'}
-            </Text>
-            <Text style={styles.platformNoticeText}>
-              {announcement || 'Some features may be temporarily limited while we improve Connectly.'}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-      <View style={styles.storyCard}>
-        <View style={styles.storyCardHeader}>
-          <Text style={[styles.sectionTitle, styles.storyCardTitle]}>Stories</Text>
-          <Text style={styles.storyHint}>
-            {stories.length ? `${stories.length} active` : 'Start sharing'}
-          </Text>
-        </View>
-        {stories.length ? (
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={stories}
-            keyExtractor={item => item._id}
-            contentContainerStyle={styles.storyList}
-            renderItem={({ item, index }) => {
-              const author = item.authorId ?? {
-                name: 'Member',
-                username: 'member',
-                avatarUrl: undefined,
-              };
-              return (
-                <Pressable
-                  style={styles.storyItem}
-                  onPress={() => openStory(index)}
-                >
-                  <View style={styles.storyRing}>
-                    <Avatar
-                      initials={author.name
-                        .split(' ')
-                        .map(part => part[0])
-                        .join('')
-                        .slice(0, 2)}
-                      avatarUrl={author.avatarUrl}
-                      size={44}
-                    />
-                  </View>
-                  <Text numberOfLines={1} style={styles.storyName}>
-                    {author.name}
-                  </Text>
-                </Pressable>
-              );
-            }}
-          />
-        ) : (
-          <Pressable onPress={onCreatePost} style={styles.emptyStory}>
-            <View style={styles.addStory}>
-              <Text style={styles.addStoryText}>＋</Text>
-            </View>
-            <View>
-              <Text style={styles.emptyStoryTitle}>Share your first story</Text>
-              <Text style={styles.emptyStoryText}>
-                Photos and videos disappear after 24 hours
-              </Text>
-            </View>
-          </Pressable>
-        )}
       </View>
       <Pressable style={styles.composer} onPress={onCreatePost}>
         <Avatar initials={initials} avatarUrl={user.avatarUrl} size={40} />
@@ -404,6 +308,44 @@ export function FeedScreen({
           <Text style={styles.composerAddText}>＋</Text>
         </View>
       </Pressable>
+      <View style={styles.storyCard}>
+        <View style={styles.storyCardHeader}>
+          <Text style={[styles.sectionTitle, styles.storyCardTitle]}>Stories</Text>
+          <Text style={styles.storyHint}>{stories.length ? `${stories.length} active` : 'Your story'}</Text>
+        </View>
+        {stories.length ? (
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={stories}
+            keyExtractor={item => item._id}
+            contentContainerStyle={styles.storyList}
+            renderItem={({ item, index }) => {
+              const author = item.authorId ?? { name: 'Member', username: 'member', avatarUrl: undefined };
+              return (
+                <Pressable style={styles.storyItem} onPress={() => openStory(index)}>
+                  <View style={styles.storyRing}>
+                    <Avatar
+                      initials={author.name.split(' ').map(part => part[0]).join('').slice(0, 2)}
+                      avatarUrl={author.avatarUrl}
+                      size={44}
+                    />
+                  </View>
+                  <Text numberOfLines={1} style={styles.storyName}>{author.name}</Text>
+                </Pressable>
+              );
+            }}
+          />
+        ) : (
+          <Pressable onPress={onCreatePost} style={styles.emptyStory}>
+            <View style={styles.addStory}><Text style={styles.addStoryText}>＋</Text></View>
+            <View>
+              <Text style={styles.emptyStoryTitle}>Add to your story</Text>
+              <Text style={styles.emptyStoryText}>Share a photo or thought for 24 hours</Text>
+            </View>
+          </Pressable>
+        )}
+      </View>
       <View style={styles.feedHeading}>
         <View>
           <Text style={styles.sectionTitle}>
@@ -423,7 +365,7 @@ export function FeedScreen({
       <FlatList
         horizontal
         showsHorizontalScrollIndicator={false}
-        data={modes}
+        data={modes.filter(item => item.key !== 'saved' || mode === 'saved')}
         keyExtractor={item => item.key}
         contentContainerStyle={styles.modeRow}
         renderItem={({ item }) => (
@@ -521,8 +463,8 @@ export function FeedScreen({
                   ? 'Loading your feed…'
                   : mode === 'following'
                     ? 'Follow people to see updates here.'
-                    : mode === 'friends'
-                      ? 'Your friends have not posted yet.'
+                    : mode === 'groups'
+                      ? 'Join a group to see conversations from your communities.'
                       : mode === 'saved'
                         ? 'Save posts to find them here.'
                         : 'Create the first update for your community.')}
@@ -642,6 +584,11 @@ export function FeedScreen({
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.canvas },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 120 },
+  appBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.sm, paddingBottom: spacing.md },
+  logo: { color: colors.ink, fontSize: 24, fontWeight: '900', letterSpacing: -1 },
+  headerActions: { flexDirection: 'row', gap: spacing.sm },
+  headerButton: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  headerButtonText: { color: colors.ink, fontSize: 21, fontWeight: '800' },
   skeletonWrap: { width: '100%', marginTop: spacing.md },
   skeletonCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
   skeletonHeader: { flexDirection: 'row', alignItems: 'center' },
@@ -749,11 +696,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   storyCardTitle: {
+    fontSize: 18,
     marginVertical: 0,
     marginBottom: spacing.sm,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 26,
     fontWeight: '900',
     color: colors.ink,
     letterSpacing: -0.5,
@@ -815,22 +763,22 @@ const styles = StyleSheet.create({
   composer: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    padding: spacing.md,
+    padding: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     ...shadow,
   },
   composerCopy: { flex: 1, marginLeft: spacing.md },
   composerTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
     color: colors.ink,
   },
   composerHint: {
-    fontSize: 11,
+    fontSize: 13,
     color: colors.muted,
     marginTop: 2,
   },
@@ -861,11 +809,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
   feedSubtitle: {
-    fontSize: 11,
+    fontSize: 13,
     color: colors.muted,
     marginTop: 3,
     fontWeight: '500',
@@ -895,8 +843,8 @@ const styles = StyleSheet.create({
   modeChip: {
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 9,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 11,
     marginRight: spacing.sm,
     borderWidth: 0,
   },
@@ -904,7 +852,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   modeText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
     color: colors.muted,
   },

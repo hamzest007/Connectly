@@ -13,10 +13,12 @@ import {CollaborationRequest} from './collaboration-request.model';
 
 const router = Router();
 router.use(requireAuth);
-const publicFields = 'name username email bio avatarUrl coverUrl website location country education maritalStatus privateAccount isVerified accountType pageEnabled pageName pageUsername pageCategory pageWebsite pageEmail pagePhone pageLocation pageCountry theme accentColor profileLayout featuredSections createdAt';
+const publicFields = 'name username email bio avatarUrl coverUrl website location country education maritalStatus privateAccount isVerified accountType pageEnabled pageName pageUsername pageCategory pageWebsite pageEmail pagePhone pageLocation pageCountry theme accentColor profileLayout featuredSections interests createdAt';
 
 router.get('/me', asyncHandler(async (req:AuthRequest, res) => ok(res, await User.findById(req.userId).select(publicFields))));
 router.get('/me/recommendation-preferences', asyncHandler(async (req:AuthRequest, res) => ok(res, await RecommendationPreferences.findOneAndUpdate({userId:req.userId},{},{upsert:true,new:true,setDefaultsOnInsert:true}).select('-userId'))));
+router.get('/me/interests', asyncHandler(async (req:AuthRequest,res) => { const user=await User.findById(req.userId).select('interests'); return ok(res,user?.interests??[]); }));
+router.put('/me/interests', asyncHandler(async (req:AuthRequest,res) => { const data=z.object({interests:z.array(z.string().trim().min(2).max(40)).max(20)}).parse(req.body); const user=await User.findByIdAndUpdate(req.userId,{interests:[...new Set(data.interests)]},{new:true}).select('interests'); return ok(res,user?.interests??[]); }));
 router.patch('/me/recommendation-preferences', asyncHandler(async (req:AuthRequest, res) => {
   const data=z.object({chronological:z.boolean().optional(),showReasons:z.boolean().optional(),mutedKeywords:z.array(z.string().trim().min(1).max(40)).max(100).optional()}).parse(req.body);
   if (data.mutedKeywords) data.mutedKeywords=[...new Set(data.mutedKeywords.map(value=>value.toLowerCase()).filter(Boolean))];

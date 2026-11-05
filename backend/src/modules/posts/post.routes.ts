@@ -23,7 +23,7 @@ router.use(requireAuth);
 
 router.get('/', asyncHandler(async (req: AuthRequest, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit ?? 12), 1), 50);
-  const feed = z.enum(['for-you','following','friends','latest','trending','reels']).catch('for-you').parse(String(req.query.feed ?? 'for-you'));
+  const feed = z.enum(['for-you','following','friends','latest','trending','groups','reels']).catch('for-you').parse(String(req.query.feed ?? 'for-you'));
   const activePublisher=(await User.findById(req.userId).select('accountType'))?.accountType==='page'?'page':'personal';
   const ownPublisherFilter=activePublisher==='page'?{publisherType:'page'}:{$or:[{publisherType:'personal'},{publisherType:{$exists:false}}]};
   const hidden = await HiddenPost.find({userId:req.userId}).distinct('postId');
@@ -49,6 +49,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res) => {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors}}, {audience:'friends',authorId:{$in:visibleAuthors}}, {groupId:{$in:groupIds},audience:'public'}, {authorId:req.userId,...ownPublisherFilter}];
   } else if (feed === 'following') {
     query.$or = [{audience:'public',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {audience:'friends',authorId:{$in:visibleAuthors.filter(id => id !== req.userId)}}, {groupId:{$in:groupIds},audience:'public'}];
+  } else if (feed === 'groups') {
+    query.$or = [{groupId:{$in:groupIds}}, {authorId:req.userId,...ownPublisherFilter,groupId:{$ne:null}}];
   } else {
     query.$or = [{audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$ne:null},audience:'public',authorId:{$nin:[...blocked, ...snoozed, req.userId]}}, {groupId:{$in:groupIds},audience:'public'}, {audience:'friends',authorId:{$in:visibleAuthors}}, {authorId:req.userId,...ownPublisherFilter}];
   }
@@ -190,7 +192,11 @@ router.post('/:id/comments', asyncHandler(async (req: AuthRequest, res) => {
   const comment = await Comment.create({postId: post._id, authorId: req.userId, ...body}); post.commentCount += 1; await post.save(); await notify(post.authorId, req.userId, 'comment', 'commented on your post', 'post', String(post._id));
   return ok(res, comment, 201);
 }));
-router.get('/:id/comments', asyncHandler(async (req, res) => ok(res, await Comment.find({postId: req.params.id}).sort({createdAt: -1}).limit(50).populate('authorId', 'name username avatarUrl'))));
+router.get('/:id/comments', asyncHandler(async (req, res) => {
+  const sort = String(req.query.sort ?? 'relevant');
+  const order = sort === 'oldest' ? {createdAt: 1} : sort === 'newest' ? {createdAt: -1} : {pinned: -1, likeCount: -1, createdAt: -1};
+  return ok(res, await Comment.find({postId: req.params.id}).sort(order as any).limit(100).populate('authorId', 'name username avatarUrl isVerified'));
+}));
 router.post('/:id/comments/:commentId/like', asyncHandler(async (req:AuthRequest,res)=>{const comment=await Comment.findOne({_id:req.params.commentId,postId:req.params.id});if(!comment)throw new HttpError(404,'Comment not found.');await CommentReaction.updateOne({commentId:comment._id,userId:req.userId},{$setOnInsert:{commentId:comment._id,userId:req.userId}},{upsert:true});comment.likeCount=await CommentReaction.countDocuments({commentId:comment._id});await comment.save();return ok(res,{liked:true,count:comment.likeCount});}));
 router.delete('/:id/comments/:commentId/like', asyncHandler(async (req:AuthRequest,res)=>{const comment=await Comment.findOne({_id:req.params.commentId,postId:req.params.id});if(!comment)throw new HttpError(404,'Comment not found.');await CommentReaction.deleteOne({commentId:comment._id,userId:req.userId});comment.likeCount=await CommentReaction.countDocuments({commentId:comment._id});await comment.save();return ok(res,{liked:false,count:comment.likeCount});}));
 router.post('/:id/comments/:commentId/pin', asyncHandler(async (req:AuthRequest,res)=>{const post=await Post.findOne({_id:req.params.id,authorId:req.userId});if(!post)throw new HttpError(403,'Only the post creator can pin comments.');await Comment.updateMany({postId:post._id},{pinned:false});const comment=await Comment.findOneAndUpdate({_id:req.params.commentId,postId:post._id},{pinned:true},{new:true});if(!comment)throw new HttpError(404,'Comment not found.');return ok(res,{pinned:true,comment});}));

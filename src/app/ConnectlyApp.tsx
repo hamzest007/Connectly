@@ -19,6 +19,7 @@ import { CreateGroupScreen } from '../features/groups/CreateGroupScreen';
 import { EventsScreen } from '../features/events/EventsScreen';
 import { CreatorIdeasScreen } from '../features/creator/CreatorIdeasScreen';
 import { SettingsDetailScreen } from '../features/settings/SettingsDetailScreen';
+import { InterestsScreen } from '../features/onboarding/InterestsScreen';
 import { SplashScreen } from '../components/common/SplashScreen';
 import { BottomTabBar, BottomTab } from '../components/navigation/BottomTabBar';
 import { colors, shadow, spacing } from '../theme/tokens';
@@ -61,7 +62,7 @@ export function ConnectlyApp() {
   const [focusComments, setFocusComments] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [screen, setScreen] = useState<
-    'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'create-group' | 'events' | 'creator-ideas' | 'settings' | 'search' | 'friend-requests'
+    'main' | 'profile' | 'messages' | 'blocked' | 'groups' | 'create-group' | 'events' | 'creator-ideas' | 'settings' | 'search' | 'friend-requests' | 'interests'
   >('main');
   const [settingsKind, setSettingsKind] = useState<
     | 'activity'
@@ -175,6 +176,7 @@ export function ConnectlyApp() {
   const authenticate = (next: Session) => {
     setSession(next);
     void saveSession(next);
+    if (!next.user.interests?.length) setScreen('interests');
   };
   const logout = async () => {
     if (session)
@@ -433,6 +435,7 @@ export function ConnectlyApp() {
         onOpenGroup={groupId => { setPendingGroupId(groupId); setScreen('groups'); }}
       />
     );
+  if (screen === 'interests') return <SafeAreaView style={styles.app} edges={['top', 'bottom']}><InterestsScreen accessToken={session.accessToken} onDone={interests => { setSession(current => { if (!current) return current; const next = {...current, user: {...current.user, interests}}; void saveSession(next); return next; }); setScreen('main'); setTab('home'); }} /></SafeAreaView>;
   return (
     <SafeAreaView style={styles.app} edges={['top', 'bottom']}>
       {content}

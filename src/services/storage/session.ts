@@ -10,6 +10,7 @@ export type Session = {
     avatarUrl?: string;
     accountType?: 'user' | 'page';
     role?: string;
+    interests?: string[];
   };
   refreshToken: string;
 };

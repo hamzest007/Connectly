@@ -2,8 +2,11 @@ import {Schema, model} from 'mongoose';
 
 const userSchema = new Schema({
   email: {type: String, required: true, unique: true, lowercase: true, trim: true, index: true},
+  normalizedEmail: {type: String, required: true, unique: true, lowercase: true, trim: true, index: true},
   phone: {type: String, default: '', trim: true, index: true},
+  phoneNumber: {type: String, default: '', trim: true},
   username: {type: String, required: true, unique: true, lowercase: true, trim: true, index: true},
+  normalizedUsername: {type: String, required: true, unique: true, lowercase: true, trim: true, index: true},
   accountType: {type: String, enum: ['user', 'page'], default: 'user', index: true},
   pageEnabled: {type: Boolean, default: false},
   pageName: {type: String, default: '', trim: true, maxlength: 80},
@@ -23,6 +26,7 @@ const userSchema = new Schema({
   personalAvatarUrl: {type: String, default: ''},
   personalCoverUrl: {type: String, default: ''},
   name: {type: String, required: true, trim: true, maxlength: 80},
+  fullName: {type: String, default: '', trim: true, maxlength: 60},
   passwordHash: {type: String, required: true, select: false},
   bio: {type: String, default: '', maxlength: 280},
   avatarUrl: {type: String, default: ''},
@@ -44,12 +48,16 @@ const userSchema = new Schema({
   passwordResetExpiresAt: {type: Date, default: null},
   role: {type: String, enum: ['user', 'moderator', 'admin', 'super-admin', 'support-agent', 'analyst', 'finance-manager', 'developer-ops'], default: 'user', index: true},
   status: {type: String, enum: ['active', 'suspended'], default: 'active', index: true},
+  accountStatus: {type: String, enum: ['active', 'pending-verification', 'disabled'], default: 'active', index: true},
+  acceptedTermsAt: {type: Date, default: null},
+  acceptedTermsVersion: {type: String, default: ''},
   suspendedUntil: {type: Date, default: null},
   suspensionReason: {type: String, default: '', maxlength: 500},
   theme: {type: String, enum: ['light','dark','system'], default: 'system'},
   accentColor: {type: String, default: '#635BFF'},
   profileLayout: {type: String, enum: ['standard','compact','featured'], default: 'standard'},
   featuredSections: {type: [String], default: []},
+  interests: {type: [String], default: []},
   lastSeenAt: {type: Date, default: null, index: true},
 }, {timestamps: true});
 

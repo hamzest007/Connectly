@@ -52,7 +52,9 @@ export function ReelsScreen({
 }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const reelHeight = Math.max(420, windowHeight);
+  // Keep the reel content above the persistent app navigation so captions and
+  // creator information are never hidden behind the tab bar.
+  const reelHeight = Math.max(420, windowHeight - insets.top - insets.bottom - 88);
   const compact = windowWidth < 360;
   const [items, setItems] = React.useState<Reel[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -269,7 +271,7 @@ export function ReelsScreen({
     );
   return (
     <View style={[styles.page, !items.length && styles.emptyPage]}>
-      <View style={[styles.header, { paddingTop: Math.max(spacing.sm, insets.top) }, !items.length && styles.emptyHeader]}>
+      <View style={[styles.header, { paddingTop: spacing.sm }, !items.length && styles.emptyHeader]}>
         <View style={styles.headerTop}><Text style={[styles.title, !items.length && styles.emptyHeaderTitle]}>Reels</Text><Pressable style={styles.create} onPress={onCreate} accessibilityLabel="Create reel"><Text style={styles.createText}>＋</Text></Pressable></View>
         <View style={styles.feedTabs}>
           <Pressable onPress={() => setFeed('reels')} style={[styles.feedTab, compact && styles.feedTabCompact, feed === 'reels' && styles.feedTabActive]}><Text style={[styles.feedTabText, !items.length && styles.emptyTabText, feed === 'reels' && styles.feedTabTextActive]}>For You</Text></Pressable>
@@ -537,14 +539,14 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#05070B' },
   emptyPage: { backgroundColor: colors.canvas },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 5,
     paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.md,
     backgroundColor: 'rgba(5,7,11,.62)',
   },
-  emptyHeader: { backgroundColor: colors.canvas },
+  emptyHeader: { backgroundColor: colors.canvas, position: 'relative' },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: {
     fontSize: 26,
@@ -552,8 +554,8 @@ const styles = StyleSheet.create({
     color: '#fff', letterSpacing: -0.5,
   },
   emptyHeaderTitle: { color: colors.ink },
-  feedTabs: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  feedTab: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill },
+  feedTabs: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, alignSelf: 'flex-start' },
+  feedTab: { minHeight: 42, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   feedTabActive: { backgroundColor: colors.blue },
   feedTabText: { color: 'rgba(255,255,255,.72)', fontSize: 12, fontWeight: '800' },
   emptyTabText: { color: colors.muted },
@@ -654,7 +656,7 @@ const styles = StyleSheet.create({
   },
   muted: { color: colors.muted, fontSize: 13, marginTop: spacing.sm },
   empty: { alignItems: 'center', justifyContent: 'center', paddingTop: 100 },
-  emptyState: { alignSelf: 'center', width: '92%', maxWidth: 440, minHeight: 330, marginTop: 150, padding: spacing.xl, paddingTop: spacing.xxl, borderRadius: 28, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, ...shadow },
+  emptyState: { alignSelf: 'center', width: '92%', maxWidth: 440, minHeight: 330, marginTop: spacing.lg, padding: spacing.xl, paddingTop: spacing.xxl, borderRadius: 28, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, ...shadow },
   emptyIcon: { fontSize: 35, color: colors.blue },
   emptyTitle: {
     fontSize: 19,

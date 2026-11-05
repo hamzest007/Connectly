@@ -29,6 +29,9 @@ type Comment = {
   body: string;
   authorId: { name: string; username?: string; avatarUrl?: string } | null;
   createdAt: string;
+  parentId?: string | null;
+  likeCount?: number;
+  pinned?: boolean;
 };
 export function PostCard({
   post,
@@ -67,6 +70,9 @@ export function PostCard({
   const [commentCount, setCommentCount] = useState(post.comments);
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState<Comment[]>([]);
+  const [commentSort, setCommentSort] = useState<'relevant' | 'newest' | 'oldest'>('relevant');
+  const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
+  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [showComments, setShowComments] = useState(Boolean(initialShowComments));
   const [showMenu, setShowMenu] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,6 +81,8 @@ export function PostCard({
   const [shares, setShares] = useState(post.shares);
   const [saved, setSaved] = useState(Boolean(initialSaved));
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+  const [viewerMedia, setViewerMedia] = useState<NonNullable<Post['media']> | null>(null);
+  const [viewerIndex, setViewerIndex] = useState(0);
   const [pinned, setPinned] = useState(Boolean(post.pinned));
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
@@ -104,7 +112,7 @@ export function PostCard({
     setResolvedGroupCover(post.group?.coverUrl);
     if (!post.group?.id || post.group.coverUrl) return;
     let active = true;
-    void apiRequest<{coverUrl?: string}>(`/groups/${post.group.id}`, {}, accessToken)
+    void apiRequest<{ coverUrl?: string }>(`/groups/${post.group.id}`, {}, accessToken)
       .then(group => { if (active && group.coverUrl) setResolvedGroupCover(group.coverUrl); })
       .catch(() => undefined);
     return () => { active = false; };
@@ -161,15 +169,15 @@ export function PostCard({
     try {
       const result = selectedReaction === type
         ? await apiRequest<{ count: number }>(
-            `/posts/${post.id}/reaction`,
-            { method: 'DELETE' },
-            accessToken,
-          )
+          `/posts/${post.id}/reaction`,
+          { method: 'DELETE' },
+          accessToken,
+        )
         : await apiRequest<{ count: number }>(
-            `/posts/${post.id}/reaction`,
-            { method: 'PUT', body: JSON.stringify({ type }) },
-            accessToken,
-          );
+          `/posts/${post.id}/reaction`,
+          { method: 'PUT', body: JSON.stringify({ type }) },
+          accessToken,
+        );
       setSelectedReaction(selectedReaction === type ? null : type);
       setCount(result.count);
       setShowReactionPicker(false);
@@ -180,11 +188,11 @@ export function PostCard({
       setReactionBusy(false);
     }
   };
-  const loadComments = async () => {
+  const loadComments = async (sort = commentSort) => {
     setShowComments(true);
     try {
       const result = await apiRequest<Comment[]>(
-        `/posts/${post.id}/comments`,
+        `/posts/${post.id}/comments?sort=${sort}`,
         {},
         accessToken,
       );
@@ -192,6 +200,20 @@ export function PostCard({
     } catch {
       setComments([]);
     }
+  };
+  const toggleCommentLike = async (item: Comment) => {
+    const liked = Boolean(commentLikes[item._id]);
+    setCommentLikes(current => ({...current, [item._id]: !liked}));
+    setComments(current => current.map(value => value._id === item._id ? {...value, likeCount: Math.max(0, (value.likeCount ?? 0) + (liked ? -1 : 1))} : value));
+    try {
+      await apiRequest(`/posts/${post.id}/comments/${item._id}/like`, {method: liked ? 'DELETE' : 'POST'}, accessToken);
+    } catch {
+      setCommentLikes(current => ({...current, [item._id]: liked}));
+      setComments(current => current.map(value => value._id === item._id ? {...value, likeCount: Math.max(0, (value.likeCount ?? 0) + (liked ? 1 : -1))} : value));
+    }
+  };
+  const pinComment = async (item: Comment) => {
+    try { await apiRequest(`/posts/${post.id}/comments/${item._id}/pin`, {method: 'POST'}, accessToken); await loadComments(); } catch { }
   };
   React.useEffect(() => {
     if (initialShowComments) void loadComments();
@@ -202,10 +224,11 @@ export function PostCard({
     try {
       await apiRequest<Comment>(
         `/posts/${post.id}/comments`,
-        { method: 'POST', body: JSON.stringify({ body: comment.trim() }) },
+        { method: 'POST', body: JSON.stringify({ body: comment.trim(), parentId: replyTarget?._id }) },
         accessToken,
       );
       setComment('');
+      setReplyTarget(null);
       setCommentCount(value => value + 1);
       await loadComments();
     } finally {
@@ -220,7 +243,7 @@ export function PostCard({
         accessToken,
       );
       setShares(result.shareCount);
-    } catch {}
+    } catch { }
   };
   const hide = async () => {
     try {
@@ -230,7 +253,7 @@ export function PostCard({
         accessToken,
       );
       onHidden?.(post.id);
-    } catch {}
+    } catch { }
   };
   const notInterested = async () => {
     try {
@@ -253,13 +276,13 @@ export function PostCard({
         accessToken,
       );
       onHidden?.(post.id);
-    } catch {}
+    } catch { }
   };
   const remove = async () => {
     try {
       await apiRequest(`/posts/${post.id}`, { method: 'DELETE' }, accessToken);
       onHidden?.(post.id);
-    } catch {}
+    } catch { }
   };
   const toggleSave = async () => {
     if (saveBusy) return;
@@ -290,7 +313,7 @@ export function PostCard({
       );
       setPinned(next);
       setShowMenu(false);
-    } catch {}
+    } catch { }
   };
   const repost = async () => {
     try {
@@ -301,24 +324,24 @@ export function PostCard({
       );
       setShowMenu(false);
       onReposted?.();
-    } catch {}
+    } catch { }
   };
   const sharePostLink = async () => {
     try {
-      const result = await apiRequest<{url: string}>(
+      const result = await apiRequest<{ url: string }>(
         `/posts/${post.id}/share-link`,
         {},
         accessToken,
       );
       setShowMenu(false);
-      await Share.share({message: result.url});
-    } catch {}
+      await Share.share({ message: result.url });
+    } catch { }
   };
   const reportPost = async () => {
     try {
       await apiRequest(
         '/reports',
-        {method: 'POST', body: JSON.stringify({targetType: 'post', targetId: post.id, reason: 'Inappropriate or abusive content'})},
+        { method: 'POST', body: JSON.stringify({ targetType: 'post', targetId: post.id, reason: 'Inappropriate or abusive content' }) },
         accessToken,
       );
       setShowMenu(false);
@@ -335,7 +358,7 @@ export function PostCard({
         accessToken,
       );
       onHidden?.(post.id);
-    } catch {}
+    } catch { }
   };
   const editPost = async () => {
     if (!editBody.trim() && !post.poll && !post.interactive && !editMedia.length) return;
@@ -354,6 +377,9 @@ export function PostCard({
       setEditing(false);
     }
   };
+
+  const topLevelComments = comments.filter(item => !item.parentId);
+  const repliesFor = (commentId: string) => comments.filter(item => item.parentId === commentId);
 
 
   return (
@@ -399,9 +425,9 @@ export function PostCard({
             accessibilityRole="button"
             accessibilityLabel={`Open ${post.group.name} group`}
             onPress={() => onOpenGroup?.(post.group!.id)}
-            style={({pressed}) => [styles.groupContext, pressed && styles.groupContextPressed]}
+            style={({ pressed }) => [styles.groupContext, pressed && styles.groupContextPressed]}
           >
-            {resolvedGroupCover ? <Image source={{uri: resolvedGroupCover}} style={styles.groupContextImage} /> : <View style={styles.groupContextFallback}><Text style={styles.groupContextFallbackText}>{String(post.group.name ?? 'Group').slice(0, 1).toUpperCase()}</Text></View>}
+            {resolvedGroupCover ? <Image source={{ uri: resolvedGroupCover }} style={styles.groupContextImage} /> : <View style={styles.groupContextFallback}><Text style={styles.groupContextFallbackText}>{String(post.group.name ?? 'Group').slice(0, 1).toUpperCase()}</Text></View>}
             <View style={styles.groupContextCopy}><Text style={styles.groupContextName}>{post.group.name}</Text><Text style={styles.groupContextMeta}>{post.group.visibility === 'private' ? 'Private group' : 'Public group'}{post.group.memberCount ? ` · ${post.group.memberCount.toLocaleString()} members` : ''}</Text></View>
             <Text style={styles.groupContextChevron}>›</Text>
           </Pressable>
@@ -474,7 +500,9 @@ export function PostCard({
         ) : null}
         {recommendationReason ? <Text style={styles.recommendationReason}>✦ {recommendationReason}</Text> : null}
         {post.contentWarning ? <Text style={styles.contentWarning}>⚠ {post.contentWarning}</Text> : null}
+        {post.location ? <Text style={styles.location}>⌖ {post.location}</Text> : null}
         {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
+        {post.hashtags?.length ? <Text style={styles.hashtags}>{post.hashtags.join(' ')}</Text> : null}
         {poll ? (
           <View style={styles.pollCard}>
             <Text style={styles.pollQuestion}>{poll.question}</Text>
@@ -492,6 +520,13 @@ export function PostCard({
             <Text style={styles.pollMeta}>{pollBusy ? 'Saving your vote…' : pollVoted ? 'Your vote is recorded · ' : ''}{`${poll.options.reduce((total, option) => total + option.votes, 0)} votes`}{poll.endsAt ? ` · Ends ${new Date(poll.endsAt).toLocaleDateString()}` : ''}</Text>
           </View>
         ) : null}
+        {post.interactive?.type && post.interactive?.prompt ? (
+          <View style={styles.interactiveCard}>
+            <Text style={styles.interactiveType}>{post.interactive.type === 'question' || !post.interactive.type ? 'Q&A' : post.interactive.type.toUpperCase()}</Text>
+            <Text style={styles.interactivePrompt}>{post.interactive.prompt || 'Join the conversation'}</Text>
+            {post.interactive.options?.map(option => <View key={option} style={styles.interactiveOption}><Text style={styles.interactiveOptionText}>{option}</Text></View>)}
+          </View>
+        ) : null}
         {post.repostOf ? (
           <View style={styles.repost}>
             <Text style={styles.repostLabel}>↻ Reposted from @{post.repostOf.author.username}</Text>
@@ -504,7 +539,7 @@ export function PostCard({
                 </View>
               </View>
               {post.repostOf.body ? <Text style={styles.repostBody}>{post.repostOf.body}</Text> : null}
-              {post.repostOf.media?.length ? <Image source={{uri: post.repostOf.media[0].url}} style={styles.repostImage} /> : null}
+              {post.repostOf.media?.length ? <Image source={{ uri: post.repostOf.media[0].url }} style={styles.repostImage} /> : null}
             </View>
           </View>
         ) : null}
@@ -519,10 +554,9 @@ export function PostCard({
                 key={`${media.url}-${index}`}
               >
                 {media.type === 'image' ? (
-                  <Image
-                    source={{ uri: media.url }}
-                    style={styles.mediaImage}
-                  />
+                  <Pressable onPress={() => { setViewerMedia(post.media ?? []); setViewerIndex(index); }} style={styles.mediaPressable} accessibilityLabel="Open image viewer">
+                    <Image source={{ uri: media.url }} style={styles.mediaImage} accessibilityLabel={post.accessibilityText || 'Post image'} />
+                  </Pressable>
                 ) : (
                   <Pressable
                     style={styles.videoTile}
@@ -575,7 +609,7 @@ export function PostCard({
           <View style={styles.reactionPicker}>
             {(['Like', 'Love', 'Haha', 'Wow', 'Sad', 'Angry'] as Reaction[]).map(type => (
               <Pressable key={type} onPress={() => void chooseReaction(type)} style={styles.reactionOption}>
-                <Text style={styles.reactionEmoji}>{({Like: '👍', Love: '❤️', Haha: '😂', Wow: '😮', Sad: '😢', Angry: '😡'} as Record<Reaction, string>)[type]}</Text>
+                <Text style={styles.reactionEmoji}>{({ Like: '👍', Love: '❤️', Haha: '😂', Wow: '😮', Sad: '😢', Angry: '😡' } as Record<Reaction, string>)[type]}</Text>
                 <Text style={styles.reactionLabel}>{type}</Text>
               </Pressable>
             ))}
@@ -584,7 +618,7 @@ export function PostCard({
         <View style={styles.actions}>
           <Pressable onPress={() => setShowReactionPicker(value => !value)} style={styles.action}>
             <Text style={[styles.actionText, liked && styles.active]}>
-              {selectedReaction ? ({Like: '👍', Love: '❤️', Haha: '😂', Wow: '😮', Sad: '😢', Angry: '😡'} as Record<Reaction, string>)[selectedReaction] : '♡'} {selectedReaction ?? 'Like'}
+              {selectedReaction ? ({ Like: '👍', Love: '❤️', Haha: '😂', Wow: '😮', Sad: '😢', Angry: '😡' } as Record<Reaction, string>)[selectedReaction] : '♡'} {selectedReaction ?? 'Like'}
             </Text>
           </Pressable>
           <Pressable
@@ -630,13 +664,16 @@ export function PostCard({
                   <Text style={styles.sheetCloseText}>×</Text>
                 </Pressable>
               </View>
+              <View style={styles.commentSortRow}>
+                {(['relevant', 'newest', 'oldest'] as const).map(value => <Pressable key={value} onPress={() => { setCommentSort(value); void loadComments(value); }} style={[styles.commentSort, commentSort === value && styles.commentSortActive]}><Text style={[styles.commentSortText, commentSort === value && styles.commentSortTextActive]}>{value[0].toUpperCase() + value.slice(1)}</Text></Pressable>)}
+              </View>
               <ScrollView
                 style={styles.sheetList}
                 contentContainerStyle={styles.sheetListContent}
                 keyboardShouldPersistTaps="handled"
               >
                 {comments.length ? (
-                  comments.map(item => {
+                  topLevelComments.map(item => {
                     const author = item.authorId ?? {
                       name: 'Connectly member',
                       username: 'member',
@@ -654,6 +691,7 @@ export function PostCard({
                           avatarUrl={author.avatarUrl}
                         />
                         <View style={styles.commentBubble}>
+                          {item.pinned ? <Text style={styles.pinnedComment}>Pinned by creator</Text> : null}
                           <Text style={styles.commentText}>
                             <Text style={styles.commentAuthor}>
                               {author.name}
@@ -669,6 +707,15 @@ export function PostCard({
                           <Text style={styles.commentTime}>
                             {new Date(item.createdAt).toLocaleDateString()}
                           </Text>
+                          <View style={styles.commentActions}>
+                            <Pressable onPress={() => void toggleCommentLike(item)}><Text style={[styles.commentAction, commentLikes[item._id] && styles.commentActionActive]}>♥ {item.likeCount ?? 0}</Text></Pressable>
+                            <Pressable onPress={() => setReplyTarget(item)}><Text style={styles.commentAction}>Reply</Text></Pressable>
+                            {canDelete ? <Pressable onPress={() => void pinComment(item)}><Text style={styles.commentAction}>{item.pinned ? 'Unpin' : 'Pin'}</Text></Pressable> : null}
+                          </View>
+                          {repliesFor(item._id).map(reply => {
+                            const replyAuthor = reply.authorId ?? {name: 'Connectly member', username: 'member', avatarUrl: undefined};
+                            return <View style={styles.reply} key={reply._id}><Avatar initials={replyAuthor.name.split(' ').map(part => part[0]).join('').slice(0, 2)} size={28} avatarUrl={replyAuthor.avatarUrl}/><View style={styles.replyBubble}><Text style={styles.commentAuthor}>{replyAuthor.name}</Text><Text style={styles.commentBody}>{reply.body}</Text><Pressable onPress={() => void toggleCommentLike(reply)}><Text style={[styles.commentAction, commentLikes[reply._id] && styles.commentActionActive]}>♥ {reply.likeCount ?? 0}</Text></Pressable></View></View>;
+                          })}
                         </View>
                       </View>
                     );
@@ -717,6 +764,7 @@ export function PostCard({
                   </Text>
                 </Pressable>
               </View>
+              {replyTarget ? <View style={styles.replyingBar}><Text style={styles.replyingText}>Replying to {replyTarget.authorId?.name ?? 'comment'}</Text><Pressable onPress={() => setReplyTarget(null)}><Text style={styles.replyCancel}>×</Text></Pressable></View> : null}
               <View style={styles.commentComposer}>
                 <Avatar initials="ME" size={32} />
                 <View style={styles.inputWrap}>
@@ -744,6 +792,13 @@ export function PostCard({
                 </Pressable>
               </View>
             </View>
+          </View>
+        </Modal>
+        <Modal visible={Boolean(viewerMedia)} transparent animationType="fade" onRequestClose={() => setViewerMedia(null)}>
+          <View style={styles.viewerBackdrop}>
+            <Pressable style={styles.viewerClose} onPress={() => setViewerMedia(null)}><Text style={styles.viewerCloseText}>×</Text></Pressable>
+            {viewerMedia?.[viewerIndex]?.type === 'video' ? <Video source={{uri: viewerMedia[viewerIndex].url}} style={styles.viewerVideo} resizeMode="contain" controls paused={false} /> : <ScrollView horizontal pagingEnabled contentOffset={{x: viewerIndex * 360, y: 0}} showsHorizontalScrollIndicator={false} style={styles.viewerScroll}>{viewerMedia?.map(media => <Image key={media.url} source={{uri: media.url}} style={styles.viewerImage} resizeMode="contain" accessibilityLabel={post.accessibilityText || 'Post image'} />)}</ScrollView>}
+            <Text style={styles.viewerCounter}>{viewerIndex + 1} / {viewerMedia?.length ?? 0}</Text>
           </View>
         </Modal>
       </View>
@@ -779,13 +834,13 @@ export function PostCard({
               maxLength={5000}
             />
             <Text style={styles.editLabel}>Audience</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChips}>{(['public','friends','close-friends','private'] as const).map(value => <Pressable key={value} onPress={() => setEditAudience(value)} style={[styles.editChip, editAudience === value && styles.editChipActive]}><Text style={[styles.editChipText, editAudience === value && styles.editChipTextActive]}>{value === 'close-friends' ? 'Close friends' : value[0].toUpperCase() + value.slice(1)}</Text></Pressable>)}</ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChips}>{(['public', 'friends', 'close-friends', 'private'] as const).map(value => <Pressable key={value} onPress={() => setEditAudience(value)} style={[styles.editChip, editAudience === value && styles.editChipActive]}><Text style={[styles.editChipText, editAudience === value && styles.editChipTextActive]}>{value === 'close-friends' ? 'Close friends' : value[0].toUpperCase() + value.slice(1)}</Text></Pressable>)}</ScrollView>
             <TextInput style={styles.editField} placeholder="Location" placeholderTextColor={colors.muted} value={editLocation} onChangeText={setEditLocation} />
             <TextInput style={styles.editField} placeholder="#hashtags" placeholderTextColor={colors.muted} value={editHashtags} onChangeText={setEditHashtags} />
             <TextInput style={styles.editField} placeholder="Content warning (optional)" placeholderTextColor={colors.muted} value={editWarning} onChangeText={setEditWarning} />
             <TextInput style={styles.editField} placeholder="Alt text for media (optional)" placeholderTextColor={colors.muted} value={editAccessibility} onChangeText={setEditAccessibility} />
             {post.poll ? <><Text style={styles.editLabel}>Poll</Text><TextInput style={styles.editField} placeholder="Poll question" placeholderTextColor={colors.muted} value={editPollQuestion} onChangeText={setEditPollQuestion} />{editPollOptions.map((option, index) => <TextInput key={index} style={styles.editField} placeholder={`Option ${index + 1}`} placeholderTextColor={colors.muted} value={option} onChangeText={value => setEditPollOptions(items => items.map((item, itemIndex) => itemIndex === index ? value : item))} />)}</> : null}
-            <Pressable style={styles.editMediaButton} onPress={async () => { try { const assets = await pickMedia('photo'); const uploaded = await Promise.all(assets.map(asset => uploadMedia(asset, accessToken))); setEditMedia(value => [...value, ...uploaded].slice(0, 10)); } catch {} }}><Text style={styles.editMediaText}>＋ Add photos or videos</Text></Pressable>
+            <Pressable style={styles.editMediaButton} onPress={async () => { try { const assets = await pickMedia('photo'); const uploaded = await Promise.all(assets.map(asset => uploadMedia(asset, accessToken))); setEditMedia(value => [...value, ...uploaded].slice(0, 10)); } catch { } }}><Text style={styles.editMediaText}>＋ Add photos or videos</Text></Pressable>
             {editMedia.length ? <View style={styles.editMediaList}>{editMedia.map((media, index) => <View key={`${media.url}-${index}`} style={styles.editMediaRow}><Text style={styles.editMediaMeta} numberOfLines={1}>{media.type === 'video' ? 'Video' : 'Photo'} {index + 1}</Text><Pressable onPress={() => setEditMedia(items => items.filter((_, itemIndex) => itemIndex !== index))}><Text style={styles.editRemove}>Remove</Text></Pressable></View>)}</View> : null}
             <View style={styles.editActions}>
               <Pressable
@@ -817,9 +872,9 @@ export function PostCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
+    borderRadius: 22,
     padding: spacing.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     borderWidth: 0,
     ...shadowLarge,
   },
@@ -872,26 +927,33 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontSize: 18,
   },
-  recommendationReason: { color: colors.muted, fontSize: 11, marginTop: spacing.sm },
+  recommendationReason: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: spacing.sm, marginBottom: spacing.xs },
   contentWarning: { color: colors.danger, fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
+  location: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: spacing.sm },
+  hashtags: { color: colors.primaryLight, fontSize: 13, fontWeight: '800', lineHeight: 20, marginBottom: spacing.sm },
   groupContext: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  groupContextPressed: { opacity: 0.72, transform: [{scale: 0.99}] },
+  groupContextPressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
   groupContextImage: { width: 38, height: 38, borderRadius: 12 },
   groupContextFallback: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
   groupContextFallbackText: { color: '#fff', fontWeight: '900', fontSize: 18 },
   groupContextCopy: { flex: 1, marginLeft: spacing.sm },
-  groupContextName: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  groupContextMeta: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  groupContextName: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  groupContextMeta: { color: colors.muted, fontSize: 11, marginTop: 2 },
   groupContextChevron: { color: colors.muted, fontSize: 24, paddingHorizontal: spacing.xs },
-  pollCard: { marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  pollCard: { marginTop: spacing.md, padding: spacing.lg, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   pollQuestion: { color: colors.ink, fontSize: 16, fontWeight: '900', marginBottom: spacing.sm },
-  pollOption: { minHeight: 42, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, justifyContent: 'center', overflow: 'hidden', paddingHorizontal: spacing.sm, marginTop: spacing.xs },
+  pollOption: { minHeight: 42, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, justifyContent: 'center', overflow: 'hidden', paddingHorizontal: spacing.sm, marginTop: spacing.sm },
   pollProgress: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.blueSoft },
-  pollOptionLabel: { color: colors.ink, fontSize: 13, fontWeight: '800', zIndex: 1, flex: 1 },
+  pollOptionLabel: { color: colors.ink, fontSize: 13, fontWeight: '800', zIndex: 1 },
   pollVotes: { position: 'absolute', right: spacing.sm, color: colors.muted, fontSize: 12, fontWeight: '800', zIndex: 1 },
   pollMeta: { color: colors.muted, fontSize: 11, marginTop: spacing.sm },
+  interactiveCard: { marginTop: spacing.md, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  interactiveType: { color: colors.primaryLight, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  interactivePrompt: { color: colors.ink, fontSize: 16, fontWeight: '900', lineHeight: 22, marginTop: spacing.xs, marginBottom: spacing.xs },
+  interactiveOption: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs },
+  interactiveOptionText: { color: colors.inkLight, fontSize: 13, fontWeight: '700' },
   body: {
-    fontSize: 16,
+    fontSize: 17,
     lineHeight: 24,
     color: colors.ink,
     marginVertical: spacing.lg,
@@ -920,6 +982,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     position: 'relative',
   },
+  mediaPressable: { flex: 1 },
   mediaSingle: { width: '100%', height: 230 },
   mediaImage: { width: '100%', height: '100%' },
   videoTile: { flex: 1, backgroundColor: '#172039' },
@@ -948,6 +1011,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: spacing.xs,
   },
+  viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.94)', alignItems: 'center', justifyContent: 'center' },
+  viewerClose: { position: 'absolute', zIndex: 2, top: 54, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,.18)', alignItems: 'center', justifyContent: 'center' },
+  viewerCloseText: { color: '#fff', fontSize: 28, lineHeight: 30 },
+  viewerScroll: { width: '100%', flexGrow: 0 },
+  viewerImage: { width: 360, height: 520 },
+  viewerVideo: { width: '100%', height: 520 },
+  viewerCounter: { color: '#fff', fontSize: 12, fontWeight: '800', marginTop: spacing.md },
   mediaCount: {
     position: 'absolute',
     inset: 0,
@@ -1021,6 +1091,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sheetCloseText: { fontSize: 22, color: colors.muted, lineHeight: 24 },
+  commentSortRow: { flexDirection: 'row', gap: spacing.xs, paddingVertical: spacing.sm },
+  commentSort: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt },
+  commentSortActive: { backgroundColor: colors.blueSoft },
+  commentSortText: { color: colors.muted, fontSize: 10, fontWeight: '800' },
+  commentSortTextActive: { color: colors.blue, fontWeight: '900' },
   sheetList: { flexGrow: 0 },
   sheetListContent: { paddingVertical: spacing.sm },
   comments: {
@@ -1059,6 +1134,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   commentTime: { fontSize: 10, color: colors.muted, marginTop: 4 },
+  pinnedComment: { color: colors.blue, fontSize: 10, fontWeight: '900', marginBottom: 4 },
+  commentActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
+  commentAction: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  commentActionActive: { color: colors.blue },
+  reply: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs, marginTop: spacing.sm, marginLeft: spacing.sm },
+  replyBubble: { flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: spacing.sm },
+  replyingBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.blueSoft, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 6, marginTop: spacing.sm },
+  replyingText: { color: colors.blue, fontSize: 11, fontWeight: '800' },
+  replyCancel: { color: colors.blue, fontSize: 18, lineHeight: 18 },
   noComments: { alignItems: 'center', paddingVertical: spacing.xl },
   noCommentsIcon: { fontSize: 30, color: colors.blue },
   noCommentsTitle: {

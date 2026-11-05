@@ -22,7 +22,7 @@ const postSchema = new Schema({
   contentWarning: {type: String, trim: true, maxlength: 160, default: ''},
   commentsDisabled: {type: Boolean, default: false},
   poll: {question: String, options: [{label: String, votes: {type: Number, default: 0}}], endsAt: Date},
-  interactive: {type: {type: String, enum: ['quiz', 'question', 'countdown']}, prompt: String, options: [String], answer: String, endsAt: Date},
+  interactive: {type: new Schema({type: {type: String, enum: ['quiz', 'question', 'countdown']}, prompt: String, options: [String], answer: String, endsAt: Date}, {_id: false}), default: undefined},
   collaborators: [{type: Schema.Types.ObjectId, ref: 'User'}],
   templateId: {type: String, default: ''},
   brandedCoverUrl: {type: String, default: ''},
