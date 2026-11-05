@@ -1,147 +1,69 @@
 # Connectly
 
-Connectly is a React Native CLI social app with a modular TypeScript/Express backend. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the folder structure and implementation boundaries.
+Connectly is a React Native social platform with a modular TypeScript/Express backend and a dedicated Vite-powered admin center. The repository contains the mobile client, backend modules, API documentation, architecture notes, tests, and administrative workflows in one product workspace.
 
-The complete product scope and delivery status are tracked in [FEATURES.md](./FEATURES.md).
+## Highlights
+
+- React Native mobile application
+- TypeScript/Express backend modules
+- Authentication and user flows
+- Posts, comments, reactions, and saved content
+- Friends, groups, and notifications
+- Moderation and verification workflows
+- Admin analytics, configuration, and audit logs
+- Jest tests and documented architecture boundaries
+
+## Repository structure
+
+| Directory | Purpose |
+| --- | --- |
+| `src/` | Mobile application code |
+| `backend/` | Backend modules and server-side functionality |
+| `admin/` | Vite/React administration center |
+| `docs/` | API documentation |
+| `__tests__/` | Application tests |
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md), [FEATURES.md](./FEATURES.md), and [docs/API.md](./docs/API.md) for the current implementation notes and delivery status.
 
 ## Run the mobile app
 
-# Getting Started
+Complete the official [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment) first.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
-
-### Start Metro
-
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
-
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
+```bash
+npm install
 npm start
-
-# OR using Yarn
-yarn start
 ```
 
-### Build and run
+In a second terminal:
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+```bash
 npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+# or
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+For iOS, install CocoaPods dependencies when required:
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+```bash
+bundle install
+bundle exec pod install --project-directory=ios
+```
 
-## Run the API
+## Run the admin center
 
-```sh
-cd backend
-cp .env.example .env
+```bash
+cd admin
 npm install
 npm run dev
 ```
 
-The API endpoint is `GET http://localhost:4000/health`. Auth, posts, comments, reactions, saved posts, users, friends, and notifications are persisted through MongoDB.
+## Test and lint
 
-### Local MongoDB
-
-With Docker installed, run MongoDB from `backend/`:
-
-```sh
-docker compose up -d mongodb
-npm run seed
-```
-
-The seed command requires `SEED_ADMIN_PASSWORD` in `backend/.env`; use a unique local password and never reuse it in shared or production environments.
-
-For MongoDB Atlas, replace `MONGODB_URI` in `backend/.env` with your Atlas connection string and run `npm run seed` after the database is reachable.
-
-## Test and lint mobile
-
-```sh
+```bash
 npm test
 npm run lint
 ```
 
-## Reactotron
+## Project status
 
-Install and open the Reactotron desktop app, then run Metro with cache reset:
-
-```sh
-open -a Reactotron
-npm start -- --reset-cache
-```
-
-Launch the iOS or Android app afterward. The app connects to Reactotron only in development builds. Use the React Native debugger/network/log panels to inspect app activity.
-
-## Native setup
-
-Use the standard [React Native environment setup](https://reactnative.dev/docs/environment-setup). After native dependencies are added, run `bundle exec pod install` from the project root for iOS.
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+This repository is currently private. The README documents the product scope without publishing credentials, service URLs, or private deployment details.
